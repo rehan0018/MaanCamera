@@ -1,0 +1,579 @@
+openapi: 3.1.0
+info:
+  title: MaanCamera API
+  version: 1.0.0
+  description: >
+    Production REST API for MaanCamera — India's AI-Powered Marketplace & SaaS
+    for Photography & Videography Professionals.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+  - url: https://api.maancamera.com/api/v1
+    description: Production Server
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: mc_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    MetaResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    BaseErrorResponse:
+      type: object
+      required: [success, error, meta]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        meta:
+          $ref: '#/components/schemas/MetaResponse'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        full_name:
+          type: string
+        avatar_url:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended, pending_verification, deactivated]
+        created_at:
+          type: string
+          format: date-time
+
+    ProfessionalProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        slug:
+          type: string
+        headline:
+          type: string
+        biography:
+          type: string
+        profile_image:
+          type: string
+        cover_image:
+          type: string
+        professional_type:
+          type: string
+          enum: [individual, team, studio, crew]
+        years_experience:
+          type: integer
+        base_city:
+          type: string
+        state:
+          type: string
+        country_code:
+          type: string
+          example: IN
+        service_radius_km:
+          type: integer
+        travel_available:
+          type: boolean
+        verification_status:
+          type: string
+          enum: [unverified, pending, verified, rejected]
+        avg_rating:
+          type: number
+        total_reviews:
+          type: integer
+        completed_bookings_count:
+          type: integer
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        portfolio_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        slug:
+          type: string
+        style:
+          type: string
+        location:
+          type: string
+        project_date:
+          type: string
+          format: date
+        description:
+          type: string
+        cover_url:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    Enquiry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        shoot_date:
+          type: string
+          format: date
+        duration_days:
+          type: integer
+        location:
+          type: string
+        city:
+          type: string
+        budget_min_minor:
+          type: integer
+        budget_max_minor:
+          type: integer
+        currency_code:
+          type: string
+          example: INR
+        status:
+          type: string
+          enum: [open, responded, booked, expired, cancelled]
+
+    Quotation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        enquiry_id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        version_number:
+          type: integer
+        total_amount_minor:
+          type: integer
+        advance_amount_minor:
+          type: integer
+        currency_code:
+          type: string
+        scope_of_work:
+          type: string
+        deliverables:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [draft, sent, revised, accepted, rejected, expired]
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        enquiry_id:
+          type: string
+          format: uuid
+        quotation_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        professional_id:
+          type: string
+          format: uuid
+        shoot_date:
+          type: string
+          format: date
+        location:
+          type: string
+        agreed_amount_minor:
+          type: integer
+        paid_amount_minor:
+          type: integer
+        currency_code:
+          type: string
+        booking_status:
+          type: string
+          enum: [pending_payment, confirmed, in_progress, completed, cancelled, disputed]
+        completion_status:
+          type: string
+          enum: [pending, delivered, customer_accepted]
+
+paths:
+  /auth/register:
+    post:
+      summary: Register customer or professional user
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [full_name, email, password]
+              properties:
+                full_name: { type: string }
+                email: { type: string, format: email }
+                phone: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          $ref: '#/components/responses/StandardError'
+
+  /auth/login:
+    post:
+      summary: Authenticate user & issue session cookie
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Session created successfully
+        '401':
+          $ref: '#/components/responses/StandardError'
+
+  /auth/logout:
+    post:
+      summary: Revoke session and clear session cookie
+      tags: [Authentication]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Logged out successfully
+
+  /users/me:
+    get:
+      summary: Retrieve currently authenticated user profile
+      tags: [Users]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Current user details
+    patch:
+      summary: Update current user account
+      tags: [Users]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Profile updated
+
+  /professionals:
+    post:
+      summary: Create professional profile
+      tags: [Professionals]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '201':
+          description: Profile created
+
+  /professionals/{id}:
+    get:
+      summary: Get professional profile by ID or slug
+      tags: [Professionals]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Professional profile details
+    patch:
+      summary: Update professional profile
+      tags: [Professionals]
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated profile
+
+  /search/professionals:
+    get:
+      summary: Structured discovery filter for professionals
+      tags: [Discovery & Search]
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: budget_min
+          in: query
+          schema: { type: integer }
+        - name: budget_max
+          in: query
+          schema: { type: integer }
+        - name: style
+          in: query
+          schema: { type: string }
+        - name: verified_only
+          in: query
+          schema: { type: boolean, default: false }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Matching professional profiles
+
+  /search/ai:
+    post:
+      summary: Natural-language requirement search
+      description: Parses conversational prompt (e.g. 'candid wedding photographer in Pune under 50k') into structured criteria
+      tags: [AI Subsystem]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query:
+                  type: string
+                  example: "I need a candid wedding photographer in Pune for two days, budget around Rs 50,000, with cinematic video."
+      responses:
+        '200':
+          description: Parsed requirements and candidate recommendations
+
+  /search/compare:
+    post:
+      summary: Side-by-side comparison of up to 4 professionals
+      tags: [Discovery & Search]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [professional_ids]
+              properties:
+                professional_ids:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Comparison matrix
+
+  /media/upload-url:
+    post:
+      summary: Generate presigned upload URL for SeaweedFS S3 storage
+      tags: [Media & Portfolios]
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, mime_type, file_size_bytes]
+              properties:
+                filename: { type: string }
+                mime_type: { type: string }
+                file_size_bytes: { type: integer }
+      responses:
+        '200':
+          description: Presigned upload URL and temporary storage key
+
+  /media/complete:
+    post:
+      summary: Confirm media upload completion and enqueue async processing
+      tags: [Media & Portfolios]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Upload confirmed and processing queued
+
+  /enquiries:
+    post:
+      summary: Submit customer requirement enquiry
+      tags: [Enquiries & Bookings]
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_id, title, description, shoot_date, location, city]
+              properties:
+                category_id: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+                shoot_date: { type: string, format: date }
+                duration_days: { type: integer, default: 1 }
+                location: { type: string }
+                city: { type: string }
+                budget_max_minor: { type: integer }
+                target_professional_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Enquiry created and dispatched
+
+  /quotations:
+    post:
+      summary: Create professional quotation
+      tags: [Enquiries & Bookings]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '201':
+          description: Quotation sent
+
+  /quotations/{id}/accept:
+    post:
+      summary: Customer accepts quotation to create confirmed booking
+      tags: [Enquiries & Bookings]
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Quotation accepted and booking created
+
+  /payments/create-order:
+    post:
+      summary: Create payment order (gateway adapter)
+      tags: [Payments]
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [booking_id, payment_type]
+              properties:
+                booking_id: { type: string, format: uuid }
+                payment_type:
+                  type: string
+                  enum: [advance, balance, full]
+      responses:
+        '200':
+          description: Payment order initialized
+
+  /payments/verify:
+    post:
+      summary: Server-side cryptographic payment verification
+      tags: [Payments]
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Payment verified and booking status updated
+
+  /bookings/{id}/review:
+    post:
+      summary: Submit verified customer review on completed booking
+      tags: [Reviews]
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [overall_rating, work_quality_rating, communication_rating, punctuality_rating, value_rating, review_text]
+              properties:
+                overall_rating: { type: number, minimum: 1, maximum: 5 }
+                work_quality_rating: { type: number, minimum: 1, maximum: 5 }
+                communication_rating: { type: number, minimum: 1, maximum: 5 }
+                punctuality_rating: { type: number, minimum: 1, maximum: 5 }
+                value_rating: { type: number, minimum: 1, maximum: 5 }
+                review_text: { type: string, minLength: 10 }
+      responses:
+        '201':
+          description: Review submitted
+
+responses:
+  StandardError:
+    description: Standardized error envelope
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/BaseErrorResponse'

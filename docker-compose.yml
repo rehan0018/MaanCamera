@@ -1,0 +1,173 @@
+services:
+  # ============================================================================
+  # 1. DATABASE: PostgreSQL 16 with pgvector extension
+  # ============================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: maancamera_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-maancamera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maancamera_local_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-maancamera_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maancamera} -d ${POSTGRES_DB:-maancamera_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 2. CACHE & TASK QUEUE BROKER: Valkey 7.2 (BSD-3-Clause Open-Source)
+  # ============================================================================
+  valkey:
+    image: valkey/valkey:7.2-alpine
+    container_name: maancamera_valkey
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 3. OBJECT STORAGE: SeaweedFS (Apache-2.0 S3-Compatible Storage)
+  # ============================================================================
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: maancamera_seaweedfs
+    restart: unless-stopped
+    command: "server -dir=/data -s3 -s3.port=8333 -filer -ip=seaweedfs"
+    ports:
+      - "8333:8333" # S3 gateway endpoint
+      - "9333:9333" # SeaweedFS master port
+      - "8888:8888" # SeaweedFS filer port
+    volumes:
+      - seaweedfs_data:/data
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 4. LOCAL AI RUNTIME: Ollama (MIT License)
+  # ============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: maancamera_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 5. MODULAR BACKEND: FastAPI + Uvicorn
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: maancamera_backend
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - SYNC_DATABASE_URL=postgresql://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - REDIS_URL=redis://valkey:6379/0
+      - CELERY_BROKER_URL=redis://valkey:6379/1
+      - S3_ENDPOINT_URL=http://seaweedfs:8333
+      - S3_PUBLIC_ENDPOINT_URL=http://localhost:8333
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-maancamera_s3_admin}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-maancamera_s3_secret_key_dev}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 6. ASYNC WORKERS: Celery for Media Processing & Background Intelligence
+  # ============================================================================
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: maancamera_celery_worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - CELERY_BROKER_URL=redis://valkey:6379/1
+      - CELERY_RESULT_BACKEND=redis://valkey:6379/2
+      - S3_ENDPOINT_URL=http://seaweedfs:8333
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-maancamera_s3_admin}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-maancamera_s3_secret_key_dev}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      valkey:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 7. WEB FRONTEND: Next.js 14 App Router + Tailwind CSS
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: maancamera_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_S3_URL=http://localhost:8333
+    depends_on:
+      - backend
+    networks:
+      - maancamera_net
+
+volumes:
+  postgres_data:
+  valkey_data:
+  seaweedfs_data:
+  ollama_models:
+
+networks:
+  maancamera_net:
+    driver: bridge

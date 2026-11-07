@@ -1,0 +1,56 @@
+# Local Development Support Compose File
+# Use this when running FastAPI and Next.js natively on your host machine:
+# docker compose -f docker-compose.dev.yml up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: maancamera_dev_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: maancamera
+      POSTGRES_PASSWORD: maancamera_local_dev_password
+      POSTGRES_DB: maancamera_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maancamera -d maancamera_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:7.2-alpine
+    container_name: maancamera_dev_valkey
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: maancamera_dev_seaweedfs
+    restart: unless-stopped
+    command: "server -dir=/data -s3 -s3.port=8333 -filer -ip=localhost"
+    ports:
+      - "8333:8333"
+      - "9333:9333"
+      - "8888:8888"
+    volumes:
+      - dev_seaweedfs_data:/data
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: maancamera_dev_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - dev_ollama_models:/root/.ollama
+
+volumes:
+  dev_postgres_data:
+  dev_seaweedfs_data:
+  dev_ollama_models:
