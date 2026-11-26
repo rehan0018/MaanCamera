@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import text
+from app.core.database import AsyncSessionLocal
 from app.core.config import settings
 from app.core.exceptions import AppException
 from app.core.responses import error_response
@@ -125,7 +127,21 @@ async def health_check():
 
 @app.get("/ready", tags=["System"])
 async def readiness_check():
-    return {"status": "ready", "database": "connected", "storage": "connected"}
+    db_status = "connected"
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        logger.warning(f"Database readiness probe failed: {e}")
+        db_status = "disconnected"
+
+    status_str = "ready" if db_status == "connected" else "degraded"
+    return {
+        "status": status_str,
+        "database": db_status,
+        "storage": "connected",
+        "timestamp": time.time(),
+    }
 
 
 # ------------------------------------------------------------------------------

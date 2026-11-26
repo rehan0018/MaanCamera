@@ -20,15 +20,15 @@ class SearchCandidateResult(BaseModel):
     id: uuid.UUID
     display_name: str
     slug: str
-    headline: Optional[str]
-    profile_image: Optional[str]
-    cover_image: Optional[str]
+    headline: Optional[str] = None
+    profile_image: Optional[str] = None
+    cover_image: Optional[str] = None
     base_city: str
     state: str
     years_experience: int
     avg_rating: float
     total_reviews: int
-    starting_price_minor: int
+    starting_price_minor: Optional[int] = 0
     verification_status: str
     match_score: Optional[float] = None
     match_explanation: Optional[str] = None

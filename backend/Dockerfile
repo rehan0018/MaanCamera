@@ -15,12 +15,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 RUN pip install --upgrade pip && \
     pip install .
 
+# Create unprivileged application user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
 # Copy application source code
 COPY . .
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 EXPOSE 8000
 

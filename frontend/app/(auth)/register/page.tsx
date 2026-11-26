@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Camera, Lock, Mail, User, Briefcase, ArrowRight } from "lucide-react";
+import { Camera, Lock, Mail, User, Briefcase, ArrowRight, AlertCircle, Phone } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -12,19 +13,33 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+
+    try {
+      await api.register({
+        full_name: fullName,
+        email,
+        phone: phone || undefined,
+        password,
+        role,
+      });
+
       if (role === "professional") {
         router.push("/professional/dashboard");
       } else {
         router.push("/customer/dashboard");
       }
-    }, 800);
+    } catch (err: any) {
+      setError(err.message || "Registration failed. Please check your inputs.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,6 +52,13 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-extrabold text-white">Join MaanCamera</h1>
           <p className="text-xs text-gray-400">Discover or showcase creative photography & videography</p>
         </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {/* Account Role Selector */}
         <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#1b1c23] border border-white/10 text-xs font-semibold">

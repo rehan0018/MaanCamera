@@ -6,7 +6,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.professionals.models import ProfessionalProfile, Category, Service
-from app.modules.portfolios.models import Project
+from app.modules.portfolios.models import Portfolio, Project, MediaAsset
 from app.modules.reviews.models import Review
 from app.modules.ai.models import RecommendationSession, RecommendationItem
 from app.modules.ai.schemas import (
@@ -30,8 +30,10 @@ class AIService:
         schema = {
             "type": "object",
             "properties": {
+                "categories": {"type": "array", "items": {"type": "string"}},
                 "category": {"type": "array", "items": {"type": "string"}},
                 "location": {"type": "object", "properties": {"city": {"type": "string"}}},
+                "city": {"type": "string"},
                 "style": {"type": "array", "items": {"type": "string"}},
                 "budget_max_paise": {"type": "integer"},
                 "duration_days": {"type": "integer"},
@@ -43,7 +45,18 @@ class AIService:
             try:
                 res = await cls.ollama_provider.generate_structured_output(query, schema)
                 if res and isinstance(res, dict):
-                    return res
+                    # Normalize keys
+                    cats = res.get("categories") or res.get("category") or []
+                    if isinstance(cats, str):
+                        cats = [cats]
+                    city = res.get("city") or res.get("location", {}).get("city")
+                    return {
+                        "category": cats,
+                        "location": {"city": city} if city else {},
+                        "style": res.get("style", []),
+                        "budget_max_paise": res.get("budget_max_paise"),
+                        "duration_days": res.get("duration_days", 1),
+                    }
             except Exception:
                 pass  # Fall back to heuristic rule-based extraction
 
@@ -75,7 +88,6 @@ class AIService:
                 break
 
         # Budget extraction (e.g. ₹50,000 or 50000 or 50k)
-        budget_match = re.search(r'(?:₹|rs\.?|inr)?\s*(\d+)(?:,\d+)*(?:\s*(?:k|thousand|lakh))?', q_lower)
         if "50,000" in q_lower or "50000" in q_lower or "50k" in q_lower:
             extracted["budget_max_paise"] = 5000000  # 50,000 INR = 5,000,000 paise
         elif "1,00,000" in q_lower or "100000" in q_lower or "1 lakh" in q_lower:
@@ -98,6 +110,7 @@ class AIService:
         requirements = await cls.extract_query_requirements(query)
         city = requirements.get("location", {}).get("city")
         budget_max = requirements.get("budget_max_paise")
+        target_cats = [c.lower() for c in requirements.get("category", [])]
 
         # Stage 1: Eligibility Filtering
         stmt = select(ProfessionalProfile).where(ProfessionalProfile.profile_visibility == "public")
@@ -105,46 +118,81 @@ class AIService:
             stmt = stmt.where(func.lower(ProfessionalProfile.base_city) == city.lower())
 
         res = await db.execute(stmt)
-        candidates = res.scalars().all()
+        candidates = list(res.scalars().all())
 
-        # If zero candidates match city exactly, broaden to all verified candidates
+        # If zero candidates match city exactly, broaden to all verified/public candidates
         if not candidates:
             stmt = select(ProfessionalProfile).where(ProfessionalProfile.profile_visibility == "public")
             res = await db.execute(stmt)
-            candidates = res.scalars().all()
+            candidates = list(res.scalars().all())
 
         # Stage 2: 7-Factor Weighted Relevance Ranking
         # Formula: Score = 0.25*S + 0.20*V + 0.15*R + 0.15*B + 0.10*A + 0.10*E + 0.05*T
-        scored_candidates: List[Tuple[ProfessionalProfile, float, str, List[str]]] = []
+        scored_candidates: List[Tuple[ProfessionalProfile, float, str, List[str], int]] = []
 
         for p in candidates:
-            # 1. Skills / Category match (S) [0-100]
-            s_score = 85.0
+            # Query lowest starting price from active services (avoids crash on p.starting_price_minor)
+            price_stmt = select(func.min(Service.starting_price_minor)).where(
+                Service.professional_id == p.id, Service.is_active == True
+            )
+            price_res = await db.execute(price_stmt)
+            cand_starting_price = price_res.scalar() or 0
 
-            # 2. Visual portfolio similarity (V) [0-100]
-            v_score = 80.0
+            # 1. Skills / Category Match (S) [0-100]
+            cat_stmt = (
+                select(Category.slug)
+                .join(Service, Service.category_id == Category.id)
+                .where(Service.professional_id == p.id, Service.is_active == True)
+            )
+            cat_res = await db.execute(cat_stmt)
+            prof_cats = [cat.lower() for cat in cat_res.scalars().all()]
+            if not target_cats:
+                s_score = 80.0
+            elif any(tc in pc or pc in tc for tc in target_cats for pc in prof_cats):
+                s_score = 100.0
+            else:
+                s_score = 35.0
+
+            # 2. Visual portfolio volume & depth (V) [0-100]
+            proj_stmt = (
+                select(func.count(Project.id))
+                .join(Portfolio, Portfolio.id == Project.portfolio_id)
+                .where(Portfolio.professional_id == p.id, Project.publication_status == "published")
+            )
+            proj_cnt_res = await db.execute(proj_stmt)
+            proj_cnt = proj_cnt_res.scalar() or 0
+            v_score = min(100.0, max(25.0, float(proj_cnt * 25.0)))
 
             # 3. Verified review quality (R) [0-100]
-            # avg_rating normalized: 5.0 -> 100, 4.0 -> 80
-            r_score = min(100.0, float(p.avg_rating) * 20.0)
+            # Combination of average rating and review volume
+            r_score = min(100.0, (float(p.avg_rating) / 5.0) * 80.0 + min(20.0, float(p.total_reviews * 4.0)))
 
             # 4. Budget suitability (B) [0-100]
-            b_score = 90.0
-            if budget_max and p.starting_price_minor:
-                if p.starting_price_minor <= budget_max:
+            if budget_max and cand_starting_price > 0:
+                if cand_starting_price <= budget_max:
                     b_score = 100.0
                 else:
-                    ratio = budget_max / p.starting_price_minor
+                    ratio = budget_max / cand_starting_price
                     b_score = max(20.0, ratio * 100.0)
+            else:
+                b_score = 85.0
 
-            # 5. Availability (A) [0-100]
-            a_score = 90.0
+            # 5. Availability & Travel (A) [0-100]
+            if city:
+                if p.base_city.strip().lower() == city.strip().lower():
+                    a_score = 100.0
+                elif p.travel_available:
+                    a_score = 75.0
+                else:
+                    a_score = 25.0
+            else:
+                a_score = 90.0
 
             # 6. Relevant experience (E) [0-100]
-            e_score = min(100.0, float(p.years_experience) * 10.0)
+            e_score = min(100.0, max(20.0, float(p.years_experience) * 10.0))
 
             # 7. Trust & Verification (T) [0-100]
-            t_score = 100.0 if p.verification_status == "verified" else 40.0
+            t_score = 100.0 if p.verification_status == "verified" else (65.0 if p.verification_status == "in_review" else 40.0)
 
             # Final weighted composite
             composite = (
@@ -157,19 +205,25 @@ class AIService:
                 + 0.05 * t_score
             ) / 100.0  # Normalize to 0.0 - 1.0
 
-            # Grounded explanation
+            # Grounded explanation (clean UTF-8 ★, no mojibake)
+            rating_str = f"{p.avg_rating:.1f}★" if p.total_reviews > 0 else "New Professional"
             explanation = (
                 f"Recommended based on {p.years_experience} years of {p.base_city} experience, "
-                f"a {p.avg_rating:.1f}â˜… verified rating across {p.total_reviews} reviews, "
-                f"and services matching your criteria."
+                f"a {rating_str} verified rating across {p.total_reviews} reviews, "
+                f"and active portfolio matching your creative requirements."
             )
 
             # Fetch representative project titles
-            proj_stmt = select(Project.title).where(Project.portfolio.has(professional_id=p.id)).limit(2)
-            proj_res = await db.execute(proj_stmt)
-            projects = list(proj_res.scalars().all())
+            proj_title_stmt = (
+                select(Project.title)
+                .join(Portfolio, Portfolio.id == Project.portfolio_id)
+                .where(Portfolio.professional_id == p.id, Project.publication_status == "published")
+                .limit(2)
+            )
+            proj_title_res = await db.execute(proj_title_stmt)
+            projects = list(proj_title_res.scalars().all())
 
-            scored_candidates.append((p, composite, explanation, projects))
+            scored_candidates.append((p, composite, explanation, projects, cand_starting_price))
 
         # Sort descending by composite score
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -179,13 +233,13 @@ class AIService:
             customer_id=customer_id,
             query_text=query,
             extracted_requirements=requirements,
-            ranking_version="v1.0-weighted",
+            ranking_version="v2.0-dynamic-7factor",
         )
         db.add(session)
         await db.flush()
 
         results: List[RecommendationItemResponse] = []
-        for idx, (cand, score, explanation, projs) in enumerate(scored_candidates[:10], start=1):
+        for idx, (cand, score, explanation, projs, start_price) in enumerate(scored_candidates[:10], start=1):
             item = RecommendationItem(
                 session_id=session.id,
                 professional_id=cand.id,
@@ -205,7 +259,7 @@ class AIService:
                     base_city=cand.base_city,
                     avg_rating=float(cand.avg_rating),
                     total_reviews=cand.total_reviews,
-                    starting_price_minor=cand.starting_price_minor or 500000,
+                    starting_price_minor=start_price,
                     verification_status=cand.verification_status,
                     relevance_score=round(score, 4),
                     ranking_position=idx,
@@ -225,32 +279,76 @@ class AIService:
         )
 
     @classmethod
-    async def analyze_portfolio_asset(cls, project_id: uuid.UUID) -> PortfolioAnalysisResponse:
+    async def analyze_portfolio_asset(cls, db: AsyncSession, project_id: uuid.UUID) -> PortfolioAnalysisResponse:
+        stmt = select(Project).where(Project.id == project_id)
+        res = await db.execute(stmt)
+        project = res.scalar_one_or_none()
+
+        categories = [project.style] if (project and project.style) else ["Commercial", "Creative Portfolio"]
+        tags = project.tags if (project and project.tags) else ["natural-tones", "high-resolution", "cinematic"]
+        title_context = project.title if project else "Portfolio Asset"
+        desc_context = project.description if project else "Curated professional project asset."
+
         return PortfolioAnalysisResponse(
-            detected_categories=["Wedding", "Candid", "Ceremony"],
-            suggested_tags=["warm-tones", "golden-hour", "emotional", "traditional-attire"],
-            lighting_style="Natural Golden Hour with Rim Light",
-            composition="Rule of Thirds Leading Lines",
-            suggested_caption="Intimate bridal candid captured under soft natural sunlight during the pheras ritual.",
+            detected_categories=categories,
+            suggested_tags=tags,
+            lighting_style="Balanced ambient lighting with natural falloff",
+            composition="Rule of Thirds visual balance with subject focus",
+            suggested_caption=f"{title_context}: {desc_context[:120]}",
         )
 
     @classmethod
     async def summarize_reviews(cls, db: AsyncSession, professional_id: uuid.UUID) -> ReviewSummaryResponse:
-        stmt = select(Review.review_text).where(
+        stmt = select(Review).where(
             Review.professional_id == professional_id,
             Review.moderation_status == "approved",
         )
         res = await db.execute(stmt)
-        reviews = res.scalars().all()
+        reviews = list(res.scalars().all())
+
+        if not reviews:
+            return ReviewSummaryResponse(
+                professional_id=professional_id,
+                total_reviews_analyzed=0,
+                sentiment_highlights=["No verified customer reviews have been submitted for this professional yet."],
+                strengths_mentioned=[],
+                areas_for_alignment=["Awaiting client feedback on newly completed bookings."],
+            )
+
+        # Dynamic sentiment analysis from actual stored reviews
+        avg_quality = sum(float(r.work_quality_rating) for r in reviews) / len(reviews)
+        avg_comm = sum(float(r.communication_rating) for r in reviews) / len(reviews)
+        avg_punct = sum(float(r.punctuality_rating) for r in reviews) / len(reviews)
+        avg_val = sum(float(r.value_rating) for r in reviews) / len(reviews)
+
+        highlights = []
+        strengths = []
+        areas = []
+
+        if avg_quality >= 4.5:
+            strengths.append("Exceptional work quality and composition")
+            highlights.append("Clients consistently praise the creative visual depth and final edits.")
+        if avg_comm >= 4.5:
+            strengths.append("Clear and responsive communication")
+            highlights.append("Clients highlight transparent pre-shoot coordination and quick responses.")
+        if avg_punct >= 4.5:
+            strengths.append("Punctual arrival and on-schedule deliverables")
+            highlights.append("Dependable on-time project handover within agreed timelines.")
+        if avg_val >= 4.5:
+            strengths.append("High value for money")
+
+        if not highlights:
+            highlights.append(f"Rated across {len(reviews)} bookings with solid overall client satisfaction.")
+
+        if avg_punct < 4.0:
+            areas.append("Timeline flexibility during peak festival and wedding seasons.")
+        else:
+            areas.append("Advance booking advised due to high calendar demand.")
 
         return ReviewSummaryResponse(
             professional_id=professional_id,
             total_reviews_analyzed=len(reviews),
-            sentiment_highlights=[
-                "Consistently commended for capturing emotional moments without intrusion.",
-                "Praise for prompt post-production turnaround within agreed dates.",
-                "High transparency during quotation and invoice settlement.",
-            ],
-            strengths_mentioned=["Candid framing", "Cinematic drone shots", "Friendly coordination"],
-            areas_for_alignment=["Early advance booking required during peak wedding season."],
+            sentiment_highlights=highlights,
+            strengths_mentioned=strengths if strengths else ["Reliable execution"],
+            areas_for_alignment=areas,
         )

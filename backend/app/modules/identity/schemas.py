@@ -11,6 +11,7 @@ class UserRegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     phone: Optional[str] = None
+    role: str = Field("customer", pattern="^(customer|professional)$")
 
 
 class UserLoginRequest(BaseModel):
@@ -23,6 +24,7 @@ class UserResponse(BaseModel):
     email: Optional[str]
     phone: Optional[str]
     full_name: str
+    role: str = "customer"
     avatar_url: Optional[str]
     status: str
     is_superuser: bool

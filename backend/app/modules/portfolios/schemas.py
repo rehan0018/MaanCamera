@@ -53,9 +53,9 @@ class ProjectCreateRequest(BaseModel):
 
 
 class UploadUrlRequest(BaseModel):
-    filename: str
-    mime_type: str
-    file_size_bytes: int
+    filename: str = Field(..., min_length=1, max_length=255)
+    mime_type: str = Field(..., pattern=r"^(image/(jpeg|png|webp)|video/(mp4|webm|quicktime)|application/pdf)$")
+    file_size_bytes: int = Field(..., gt=0, le=100 * 1024 * 1024)  # Max 100 MB
     is_public: bool = True
 
 

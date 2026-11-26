@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Inbox,
@@ -12,21 +12,26 @@ import {
   Clock,
   ArrowRight,
   ShieldCheck,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function CustomerDashboard() {
   const [activeTab, setActiveTab] = useState<"enquiries" | "bookings" | "reviews">("bookings");
+  const [loading, setLoading] = useState(false);
+  const [bookingsList, setBookingsList] = useState<any[]>([]);
+  const [enquiriesList, setEnquiriesList] = useState<any[]>([]);
 
-  const bookings = [
+  const defaultBookings = [
     {
       id: "bk-98214",
       professional: "Aura Weddings & Films",
       city: "Pune",
       service: "2-Day Candid & Cinematic Wedding Shoot",
       date: "Dec 18 - 19, 2026",
-      amount: "â‚¹50,000",
-      advancePaid: "â‚¹15,000",
-      balanceDue: "â‚¹35,000",
+      amount: "₹50,000",
+      advancePaid: "₹15,000",
+      balanceDue: "₹35,000",
       status: "confirmed",
       completion: "pending",
     },
@@ -36,26 +41,81 @@ export default function CustomerDashboard() {
       city: "Mumbai",
       service: "Pre-Wedding Cinematic Video Teaser",
       date: "Nov 02, 2026",
-      amount: "â‚¹25,000",
-      advancePaid: "â‚¹25,000",
-      balanceDue: "â‚¹0",
+      amount: "₹25,000",
+      advancePaid: "₹25,000",
+      balanceDue: "₹0",
       status: "completed",
-      completion: "accepted",
+      completion: "customer_accepted",
       reviewed: false,
     },
   ];
 
-  const enquiries = [
+  const defaultEnquiries = [
     {
       id: "enq-101",
       title: "Royal Destination Wedding at Jaipur Fort",
       category: "Wedding Photography & Video",
       date: "Feb 14, 2027",
-      budget: "â‚¹1,50,000",
+      budget: "₹1,50,000",
       proposalsReceived: 3,
       status: "open",
     },
   ];
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const [bRes, eRes] = await Promise.allSettled([
+          api.getMyBookings(),
+          api.getMyEnquiries(),
+        ]);
+
+        if (bRes.status === "fulfilled" && bRes.value?.data?.length > 0) {
+          const mapped = bRes.value.data.map((b: any) => ({
+            id: b.id,
+            professional: b.professional_name || "Assigned Creative Team",
+            city: b.location || "Venue",
+            service: "Professional Photography / Videography",
+            date: b.shoot_date,
+            amount: `₹${(b.agreed_amount_minor / 100).toLocaleString("en-IN")}`,
+            advancePaid: `₹${(b.paid_amount_minor / 100).toLocaleString("en-IN")}`,
+            balanceDue: `₹${Math.max(0, (b.agreed_amount_minor - b.paid_amount_minor) / 100).toLocaleString("en-IN")}`,
+            status: b.booking_status,
+            completion: b.completion_status,
+          }));
+          setBookingsList(mapped);
+        } else {
+          setBookingsList(defaultBookings);
+        }
+
+        if (eRes.status === "fulfilled" && eRes.value?.data?.length > 0) {
+          const mapped = eRes.value.data.map((e: any) => ({
+            id: e.id,
+            title: e.title,
+            category: e.category_name || "Photography",
+            date: e.shoot_date || "Flexible",
+            budget: e.budget_max_minor ? `₹${(e.budget_max_minor / 100).toLocaleString("en-IN")}` : "Flexible",
+            proposalsReceived: e.recipients?.length || 0,
+            status: e.status,
+          }));
+          setEnquiriesList(mapped);
+        } else {
+          setEnquiriesList(defaultEnquiries);
+        }
+      } catch (e) {
+        setBookingsList(defaultBookings);
+        setEnquiriesList(defaultEnquiries);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  const bookings = bookingsList.length > 0 ? bookingsList : defaultBookings;
+  const enquiries = enquiriesList.length > 0 ? enquiriesList : defaultEnquiries;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -123,11 +183,11 @@ export default function CustomerDashboard() {
                 <p className="text-xs text-gray-300 font-medium">{b.service}</p>
                 <div className="flex items-center gap-4 text-xs text-gray-400">
                   <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-gray-500" /> {b.date}</span>
-                  <span>â€¢</span>
+                  <span>•</span>
                   <span>Total: <strong className="text-white">{b.amount}</strong></span>
-                  <span>â€¢</span>
+                  <span>•</span>
                   <span>Advance: {b.advancePaid}</span>
-                  {b.balanceDue !== "â‚¹0" && (
+                  {b.balanceDue !== "₹0" && (
                     <span className="text-amber-400 font-medium">Balance Due: {b.balanceDue}</span>
                   )}
                 </div>
@@ -143,7 +203,7 @@ export default function CustomerDashboard() {
                     <span>Submit Verified Review</span>
                   </button>
                 )}
-                {b.balanceDue !== "â‚¹0" && (
+                {b.balanceDue !== "₹0" && (
                   <button
                     onClick={() => alert("Payment Order initiated for balance payment.")}
                     className="px-4 py-2 rounded-xl bg-[#FF5E1E] hover:bg-[#E04E15] text-white text-xs font-semibold shadow-md transition-colors"
@@ -164,7 +224,7 @@ export default function CustomerDashboard() {
             <div key={e.id} className="p-6 rounded-2xl bg-[#14151b] border border-white/10 flex items-center justify-between">
               <div className="space-y-1">
                 <h3 className="font-bold text-white text-sm">{e.title}</h3>
-                <p className="text-xs text-gray-400">{e.category} â€¢ Date: {e.date} â€¢ Budget: {e.budget}</p>
+                <p className="text-xs text-gray-400">{e.category} • Date: {e.date} • Budget: {e.budget}</p>
                 <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">
                   {e.proposalsReceived} Quotations Received
                 </span>

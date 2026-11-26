@@ -25,7 +25,7 @@ async def create_quotation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    quotation = await QuotationService.create_quotation(db, req.professional_id, req)
+    quotation = await QuotationService.create_quotation(db, current_user, req)
     return success_response(
         data=QuotationResponse.model_validate(quotation).model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
@@ -39,7 +39,7 @@ async def revise_quotation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    new_quotation = await QuotationService.revise_quotation(db, id, req)
+    new_quotation = await QuotationService.revise_quotation(db, id, current_user, req)
     return success_response(
         data=QuotationResponse.model_validate(new_quotation).model_dump(mode="json")
     )

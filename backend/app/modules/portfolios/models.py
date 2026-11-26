@@ -3,7 +3,7 @@
 import uuid
 from typing import List, Optional
 from datetime import date
-from sqlalchemy import String, Integer, Text, ForeignKey, Date, BigINT
+from sqlalchemy import String, Integer, BigInteger, Text, ForeignKey, Date
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base, TimestampMixin
@@ -50,7 +50,7 @@ class MediaAsset(Base):
     public_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     media_type: Mapped[str] = mapped_column(String(20), default="image", nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    file_size_bytes: Mapped[int] = mapped_column(BigINT, nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     width: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     height: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

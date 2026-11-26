@@ -30,8 +30,10 @@ class ReviewService:
             raise BusinessRuleViolationException("Only the booking customer may submit a review.")
 
         # 2. Acceptance Criteria MC-012: Only eligible completed bookings can receive reviews
-        if booking.booking_status != "completed":
-            raise BusinessRuleViolationException("Reviews are only permitted for completed bookings.")
+        if booking.booking_status != "completed" or booking.completion_status != "customer_accepted":
+            raise BusinessRuleViolationException(
+                "Reviews are only permitted for bookings that have been completed and accepted by the customer."
+            )
 
         # 3. Check duplicate review
         rev_stmt = select(Review).where(Review.booking_id == booking_id)
@@ -43,11 +45,11 @@ class ReviewService:
             booking_id=booking_id,
             customer_id=customer_id,
             professional_id=booking.professional_id,
-            overall_rating=req.overall_rating,
-            work_quality_rating=req.work_quality_rating,
-            communication_rating=req.communication_rating,
-            punctuality_rating=req.punctuality_rating,
-            value_rating=req.value_rating,
+            overall_rating=round(float(req.overall_rating), 1),
+            work_quality_rating=round(float(req.work_quality_rating), 1),
+            communication_rating=round(float(req.communication_rating), 1),
+            punctuality_rating=round(float(req.punctuality_rating), 1),
+            value_rating=round(float(req.value_rating), 1),
             review_text=req.review_text,
             moderation_status="approved",
         )
@@ -71,7 +73,7 @@ class ReviewService:
         if prof:
             prof.avg_rating = round(float(avg_r or 0.0), 2)
             prof.total_reviews = int(count_r or 0)
-            prof.completed_bookings_count += 1
+            # completed_bookings_count is managed upon booking completion, not upon review submission
 
         await db.commit()
         await db.refresh(review)

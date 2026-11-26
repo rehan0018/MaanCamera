@@ -42,7 +42,7 @@ async def create_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await PortfolioService.create_project(db, req)
+    project = await PortfolioService.create_project(db, current_user, req)
     return success_response(
         data=ProjectResponse.model_validate(project).model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
@@ -64,7 +64,7 @@ async def complete_upload(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    asset = await PortfolioService.complete_upload(db, req)
+    asset = await PortfolioService.complete_upload(db, current_user, req)
     return success_response(
         data=MediaAssetResponse.model_validate(asset).model_dump(mode="json")
     )

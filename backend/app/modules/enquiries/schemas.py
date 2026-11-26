@@ -8,10 +8,12 @@ from pydantic import BaseModel, Field
 
 class EnquiryCreateRequest(BaseModel):
     category_id: uuid.UUID
-    title: str = Field(..., max_length=200)
+    title: str = Field(..., max_length=250)
     description: str
     shoot_date: Optional[date] = None
-    location: Optional[str] = Field(None, max_length=200)
+    duration_days: int = Field(1, ge=1)
+    location: str = Field(..., max_length=200)
+    city: str = Field(..., max_length=100)
     budget_min_minor: Optional[int] = Field(None, ge=0)
     budget_max_minor: Optional[int] = Field(None, ge=0)
     currency_code: str = Field("INR", max_length=3)
@@ -37,7 +39,9 @@ class EnquiryResponse(BaseModel):
     title: str
     description: str
     shoot_date: Optional[date] = None
-    location: Optional[str] = None
+    duration_days: int = 1
+    location: str
+    city: str
     budget_min_minor: Optional[int] = None
     budget_max_minor: Optional[int] = None
     currency_code: str

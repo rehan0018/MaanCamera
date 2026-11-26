@@ -23,7 +23,7 @@ async def get_my_bookings(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    bookings = await BookingService.list_user_bookings(db, current_user.id, is_customer=True)
+    bookings = await BookingService.list_user_bookings(db, current_user)
     return success_response(
         data=[BookingResponse.model_validate(b).model_dump(mode="json") for b in bookings]
     )
@@ -35,7 +35,7 @@ async def get_booking(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    booking = await BookingService.get_booking_by_id(db, id)
+    booking = await BookingService.get_booking_by_id(db, id, current_user)
     return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
 
 
@@ -46,7 +46,7 @@ async def update_booking_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    booking = await BookingService.update_status(db, id, req.booking_status)
+    booking = await BookingService.update_status(db, id, req.booking_status, current_user)
     return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
 
 
@@ -56,7 +56,7 @@ async def complete_booking(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    booking = await BookingService.complete_booking(db, id)
+    booking = await BookingService.complete_booking(db, id, current_user)
     return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
 
 
@@ -67,5 +67,5 @@ async def cancel_booking(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    booking = await BookingService.cancel_booking(db, id, req.cancellation_reason)
+    booking = await BookingService.cancel_booking(db, id, req.cancellation_reason, current_user)
     return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))

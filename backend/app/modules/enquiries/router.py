@@ -32,7 +32,10 @@ async def get_my_enquiries(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    enquiries = await EnquiryService.list_customer_enquiries(db, current_user.id)
+    if current_user.role == "professional":
+        enquiries = await EnquiryService.list_professional_enquiries(db, current_user.id)
+    else:
+        enquiries = await EnquiryService.list_customer_enquiries(db, current_user.id)
     return success_response(
         data=[EnquiryResponse.model_validate(e).model_dump(mode="json") for e in enquiries]
     )
@@ -44,5 +47,5 @@ async def get_enquiry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    enquiry = await EnquiryService.get_enquiry_by_id(db, id)
+    enquiry = await EnquiryService.get_enquiry_by_id(db, id, current_user)
     return success_response(data=EnquiryResponse.model_validate(enquiry).model_dump(mode="json"))

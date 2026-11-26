@@ -60,6 +60,12 @@ class StorageService:
             "expires_in_seconds": expires_in,
         }
 
+    def get_public_url(self, storage_key: str, is_public: bool = True) -> Optional[str]:
+        if not is_public:
+            return None
+        bucket = self.public_bucket
+        return f"{self.public_endpoint}/{bucket}/{storage_key}"
+
     async def delete_file(self, storage_key: str, is_public: bool = True) -> bool:
         """Delete an object from SeaweedFS."""
         bucket = self.public_bucket if is_public else self.private_bucket

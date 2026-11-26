@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class BookingStatusUpdate(BaseModel):
-    booking_status: str = Field(..., pattern="^(pending_deposit|confirmed|in_progress|completed|cancelled)$")
+    booking_status: str = Field(..., pattern="^(pending_payment|confirmed|in_progress|completed|cancelled|disputed)$")
 
 
 class BookingCancelRequest(BaseModel):
@@ -16,13 +16,14 @@ class BookingCancelRequest(BaseModel):
 
 class BookingResponse(BaseModel):
     id: uuid.UUID
-    enquiry_id: uuid.UUID
-    quotation_id: uuid.UUID
+    enquiry_id: Optional[uuid.UUID] = None
+    quotation_id: Optional[uuid.UUID] = None
     customer_id: uuid.UUID
     professional_id: uuid.UUID
     shoot_date: date
     location: str
     agreed_amount_minor: int
+    paid_amount_minor: int = 0
     currency_code: str
     booking_status: str
     completion_status: str

@@ -16,6 +16,7 @@ class User(Base, TimestampMixin):
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=True)
     full_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), default="customer", nullable=False)
     avatar_url: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="active", nullable=False)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

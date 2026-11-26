@@ -50,13 +50,13 @@ export default function Footer() {
             <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
             <li><Link href="/privacy" className="hover:text-white transition-colors">DPDPA 2023 Privacy Policy</Link></li>
             <li><Link href="/admin/dashboard" className="hover:text-white transition-colors">Admin & Moderation</Link></li>
-            <li><a href="https://github.com/rehan0018/MaanCamera" target="_blank" rel="noopener noreferrer" className="hover:text-[#FF5E1E] transition-colors flex items-center gap-1 font-medium text-white">GitHub Repository â†—</a></li>
+            <li><a href="https://github.com/rehan0018/MaanCamera" target="_blank" rel="noopener noreferrer" className="hover:text-[#FF5E1E] transition-colors flex items-center gap-1 font-medium text-white">GitHub Repository ↗</a></li>
           </ul>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-500 gap-4">
-        <p>Â© 2026 MaanCamera Inc. Designed and engineered for Indian creative professionals.</p>
+        <p>© 2026 MaanCamera Inc. Designed and engineered for Indian creative professionals.</p>
         <p className="flex items-center gap-1">
           Built with <Heart className="w-3.5 h-3.5 text-[#FF5E1E] inline fill-current" /> using Open-Source Python & Next.js
         </p>

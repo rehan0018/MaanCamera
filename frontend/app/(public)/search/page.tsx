@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -13,7 +13,9 @@ import {
   Sparkles,
   Camera,
   Filter,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function SearchPage() {
   const [city, setCity] = useState("All");
@@ -22,6 +24,8 @@ export default function SearchPage() {
   const [aiMode, setAiMode] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
   const [shortlist, setShortlist] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [professionals, setProfessionals] = useState<any[]>([]);
 
   const mockProfiles = [
     {
@@ -82,6 +86,82 @@ export default function SearchPage() {
     },
   ];
 
+  // Fetch structured search results from backend
+  useEffect(() => {
+    async function fetchProfiles() {
+      setLoading(true);
+      try {
+        const params: any = {};
+        if (city !== "All") params.city = city;
+        if (category !== "all") params.category_slug = category;
+        if (verifiedOnly) params.verified_only = true;
+
+        const res = await api.searchProfessionals(params);
+        if (res.data && res.data.results && res.data.results.length > 0) {
+          const mapped = res.data.results.map((p: any) => ({
+            id: p.id,
+            name: p.display_name,
+            slug: p.slug,
+            headline: p.headline || "Creative Visual Specialist",
+            city: p.base_city,
+            rating: p.avg_rating,
+            reviews: p.total_reviews,
+            starting_price: Math.round((p.starting_price_minor || 0) / 100),
+            verified: p.verification_status === "verified",
+            experience: p.years_experience,
+            styles: ["Verified", "Portfolio"],
+            image: p.cover_image || p.profile_image || "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80",
+            match_score: p.match_score,
+            match_explanation: p.match_explanation,
+          }));
+          setProfessionals(mapped);
+        } else {
+          setProfessionals(mockProfiles);
+        }
+      } catch (err) {
+        setProfessionals(mockProfiles);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (!aiMode) {
+      fetchProfiles();
+    }
+  }, [city, category, verifiedOnly, aiMode]);
+
+  // Handle AI semantic search
+  const handleAiSearch = async () => {
+    if (!aiQuery.trim()) return;
+    setLoading(true);
+    try {
+      const res = await api.aiSearch(aiQuery);
+      if (res.data && res.data.recommendations) {
+        const mapped = res.data.recommendations.map((r: any) => ({
+          id: r.professional_id,
+          name: r.display_name,
+          slug: r.slug,
+          headline: r.headline || "AI Recommended Creative Professional",
+          city: r.base_city,
+          rating: r.avg_rating,
+          reviews: r.total_reviews,
+          starting_price: Math.round((r.starting_price_minor || 0) / 100),
+          verified: r.verification_status === "verified",
+          experience: 5,
+          styles: r.relevant_projects || ["Curated"],
+          image: r.profile_image || "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80",
+          match_score: Math.round(r.relevance_score * 100),
+          match_explanation: r.match_explanation,
+        }));
+        setProfessionals(mapped);
+      }
+    } catch (err: any) {
+      alert("AI Search: " + (err.message || "Failed to analyze query."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleShortlist = (id: string) => {
     if (shortlist.includes(id)) {
       setShortlist(shortlist.filter((x) => x !== id));
@@ -94,10 +174,12 @@ export default function SearchPage() {
     }
   };
 
-  const filtered = mockProfiles.filter((p) => {
+  const displayedList = professionals.length > 0 ? professionals : mockProfiles;
+  const filtered = displayedList.filter((p) => {
     if (city !== "All" && p.city.toLowerCase() !== city.toLowerCase()) return false;
     if (verifiedOnly && !p.verified) return false;
     return true;
+  });
   });
 
   return (
@@ -140,10 +222,12 @@ export default function SearchPage() {
               className="flex-1 bg-black/40 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#FF5E1E]"
             />
             <button
-              onClick={() => alert("AI analyzed: Extracted Category=[Wedding, Cinematic], City=Pune, Budget Max=50,000 INR, Match Score=94%")}
-              className="px-5 py-2.5 rounded-xl bg-[#FF5E1E] text-white text-xs font-semibold hover:bg-[#E04E15] transition-colors"
+              onClick={handleAiSearch}
+              disabled={loading}
+              className="px-5 py-2.5 rounded-xl bg-[#FF5E1E] text-white text-xs font-semibold hover:bg-[#E04E15] transition-colors flex items-center gap-1.5"
             >
-              Analyze & Rank
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              <span>{loading ? "Analyzing..." : "Analyze & Rank"}</span>
             </button>
           </div>
         </div>

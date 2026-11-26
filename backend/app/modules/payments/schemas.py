@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 
 class CreatePaymentOrderRequest(BaseModel):
     booking_id: uuid.UUID
-    amount_minor: int = Field(..., gt=0)
+    amount_minor: Optional[int] = Field(None, gt=0)
     currency_code: str = Field("INR", max_length=3)
-    payment_type: str = Field("advance_deposit", pattern="^(advance_deposit|full|milestone|balance)$")
+    payment_type: str = Field("advance", pattern="^(advance|balance|full)$")
 
 
 class CreatePaymentOrderResponse(BaseModel):

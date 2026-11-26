@@ -23,33 +23,37 @@ router = APIRouter(prefix="", tags=["AI Intelligence"])
 @router.post("/search/ai")
 async def natural_language_search(
     req: NaturalLanguageSearchRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    recs = await AIService.get_recommendations(db, req.query)
+    recs = await AIService.get_recommendations(db, req.query, customer_id=current_user.id)
     return success_response(data=recs.model_dump(mode="json"))
 
 
 @router.post("/ai/recommendations")
 async def get_recommendations(
     req: NaturalLanguageSearchRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    recs = await AIService.get_recommendations(db, req.query)
+    recs = await AIService.get_recommendations(db, req.query, customer_id=current_user.id)
     return success_response(data=recs.model_dump(mode="json"))
 
 
 @router.post("/ai/portfolio/analyze")
 async def analyze_portfolio(
     req: PortfolioAnalysisRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    analysis = await AIService.analyze_portfolio_asset(req.project_id)
+    analysis = await AIService.analyze_portfolio_asset(db, req.project_id)
     return success_response(data=analysis.model_dump(mode="json"))
 
 
 @router.post("/ai/reviews/summarize")
 async def summarize_reviews(
     req: ReviewSummaryRequest,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     summary = await AIService.summarize_reviews(db, req.professional_id)

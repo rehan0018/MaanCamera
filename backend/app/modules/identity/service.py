@@ -31,10 +31,12 @@ class IdentityService:
             phone=req.phone,
             password_hash=hash_password(req.password),
             full_name=req.full_name,
+            role=req.role or "customer",
             status="active",
         )
         db.add(user)
-        await db.flush()
+        await db.commit()
+        await db.refresh(user)
         return user
 
     @staticmethod

@@ -10,10 +10,11 @@ def success_response(
     data: Any = None,
     meta: Optional[Dict[str, Any]] = None,
     status_code: int = 200,
+    request_id: Optional[str] = None,
 ) -> JSONResponse:
     """Format and return a standardized success response envelope."""
     payload_meta = {
-        "request_id": str(uuid.uuid4()),
+        "request_id": request_id or str(uuid.uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if meta:
@@ -34,6 +35,7 @@ def error_response(
     message: str,
     details: Optional[Dict[str, Any]] = None,
     status_code: int = 400,
+    request_id: Optional[str] = None,
 ) -> JSONResponse:
     """Format and return a standardized error response envelope."""
     return JSONResponse(
@@ -46,7 +48,7 @@ def error_response(
                 "details": details or {},
             },
             "meta": {
-                "request_id": str(uuid.uuid4()),
+                "request_id": request_id or str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         },

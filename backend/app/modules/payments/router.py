@@ -25,7 +25,7 @@ async def create_payment_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    order = await PaymentService.create_order(db, req)
+    order = await PaymentService.create_order(db, current_user, req)
     return success_response(data=order.model_dump(mode="json"), status_code=status.HTTP_201_CREATED)
 
 
@@ -35,7 +35,7 @@ async def verify_payment(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    payment = await PaymentService.verify_payment(db, req)
+    payment = await PaymentService.verify_payment(db, current_user, req)
     return success_response(data=PaymentResponse.model_validate(payment).model_dump(mode="json"))
 
 
@@ -47,8 +47,11 @@ async def payment_webhook(
 ):
     body_bytes = await request.body()
     body_str = body_bytes.decode()
-    event_id = request.headers.get("X-Razorpay-Event-Id", f"evt_{uuid.uuid4().hex[:12]}")
+    event_id = request.headers.get("X-Razorpay-Event-Id", request.headers.get("X-Event-Id"))
     event_type = request.headers.get("X-Razorpay-Event-Type", "payment.captured")
+    signature = request.headers.get("X-Razorpay-Signature")
 
-    await PaymentService.process_webhook(db, provider, event_id, event_type, body_str)
+    await PaymentService.process_webhook(
+        db, provider, event_id, event_type, body_str, signature=signature
+    )
     return {"status": "ok"}

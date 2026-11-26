@@ -11,8 +11,21 @@ from app.modules.search.schemas import SearchFilterParams, SearchCandidateResult
 class SearchService:
     @staticmethod
     async def search_professionals(db: AsyncSession, params: SearchFilterParams) -> SearchResponse:
-        query = select(ProfessionalProfile).where(
-            ProfessionalProfile.profile_visibility == "public"
+        # Lowest starting price subquery to eliminate N+1 queries
+        price_subq = (
+            select(
+                Service.professional_id,
+                func.min(Service.starting_price_minor).label("min_price"),
+            )
+            .where(Service.is_active == True)
+            .group_by(Service.professional_id)
+            .subquery()
+        )
+
+        query = (
+            select(ProfessionalProfile, price_subq.c.min_price)
+            .outerjoin(price_subq, price_subq.c.professional_id == ProfessionalProfile.id)
+            .where(ProfessionalProfile.profile_visibility == "public")
         )
 
         if params.city:
@@ -21,21 +34,48 @@ class SearchService:
         if params.verified_only:
             query = query.where(ProfessionalProfile.verification_status == "verified")
 
-        # Category filter via joins
+        # Category filter via subquery to avoid inflating count or duplicating rows
         if params.category_slug:
-            query = query.join(Service, Service.professional_id == ProfessionalProfile.id).join(
-                Category, Category.id == Service.category_id
-            ).where(Category.slug == params.category_slug)
+            cat_subq = (
+                select(Service.professional_id)
+                .join(Category, Category.id == Service.category_id)
+                .where(
+                    Category.slug == params.category_slug.strip().lower(),
+                    Service.is_active == True,
+                )
+            )
+            query = query.where(ProfessionalProfile.id.in_(cat_subq))
+
+        # Style keyword filter across headline and bio
+        if params.style:
+            style_term = f"%{params.style.strip().lower()}%"
+            query = query.where(
+                or_(
+                    func.lower(ProfessionalProfile.headline).like(style_term),
+                    func.lower(ProfessionalProfile.bio).like(style_term),
+                )
+            )
+
+        # Budget range filter on actual service price
+        if params.budget_min_paise is not None:
+            query = query.where(price_subq.c.min_price >= params.budget_min_paise)
+        if params.budget_max_paise is not None:
+            query = query.where(price_subq.c.min_price <= params.budget_max_paise)
 
         # Count total
         count_query = select(func.count()).select_from(query.subquery())
         total_res = await db.execute(count_query)
         total = total_res.scalar() or 0
 
-        # Order by rating and reviews
+        # Weighted ranking: balances verified rating & review count with recent registrations
+        # Bayesian average: (avg_rating * total_reviews + 4.0 * 2) / (total_reviews + 2)
+        bayesian_rank = (
+            ProfessionalProfile.avg_rating * ProfessionalProfile.total_reviews + 8.0
+        ) / (ProfessionalProfile.total_reviews + 2)
+
         query = query.order_by(
-            desc(ProfessionalProfile.avg_rating),
-            desc(ProfessionalProfile.total_reviews),
+            desc(bayesian_rank),
+            desc(ProfessionalProfile.created_at),
         )
 
         # Pagination
@@ -43,17 +83,10 @@ class SearchService:
         query = query.offset(offset).limit(params.limit)
 
         res = await db.execute(query)
-        profiles = res.scalars().all()
+        rows = res.all()
 
         results = []
-        for p in profiles:
-            # Query lowest starting price across services
-            price_q = select(func.min(Service.starting_price_minor)).where(
-                Service.professional_id == p.id, Service.is_active == True
-            )
-            price_res = await db.execute(price_q)
-            min_price = price_res.scalar() or 500000  # Default 5,000 INR
-
+        for p, min_price in rows:
             results.append(
                 SearchCandidateResult(
                     id=p.id,
@@ -67,7 +100,7 @@ class SearchService:
                     years_experience=p.years_experience,
                     avg_rating=float(p.avg_rating),
                     total_reviews=p.total_reviews,
-                    starting_price_minor=min_price,
+                    starting_price_minor=min_price or 0,
                     verification_status=p.verification_status,
                 )
             )

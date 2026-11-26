@@ -3,21 +3,36 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Camera, Lock, Mail, ArrowRight } from "lucide-react";
+import { Camera, Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const res = await api.login({ email, password });
+      const user = res.data;
+      if (user.role === "professional") {
+        router.push("/professional/dashboard");
+      } else if (user.role === "admin") {
+        router.push("/admin/dashboard");
+      } else {
+        router.push("/customer/dashboard");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to sign in. Please verify your credentials.");
+    } finally {
       setLoading(false);
-      router.push("/customer/dashboard");
-    }, 800);
+    }
   };
 
   return (
@@ -30,6 +45,13 @@ export default function LoginPage() {
           <h1 className="text-2xl font-extrabold text-white">Welcome Back</h1>
           <p className="text-xs text-gray-400">Sign in to manage your enquiries, bookings, or studio</p>
         </div>
+
+        {error && (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">

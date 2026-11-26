@@ -20,7 +20,7 @@ export default function ProfessionalDashboard() {
 
   const stats = [
     { label: "Active Client Leads", value: "8", change: "+3 this week" },
-    { label: "Confirmed Shoots", value: "14", change: "â‚¹4.2L revenue" },
+    { label: "Confirmed Shoots", value: "14", change: "₹4.2L revenue" },
     { label: "Average Rating", value: "4.92", change: "48 verified reviews" },
     { label: "Portfolio Views", value: "1,240", change: "+18% vs last month" },
   ];
@@ -32,7 +32,7 @@ export default function ProfessionalDashboard() {
       type: "Destination Wedding (2 Days)",
       date: "Jan 22, 2027",
       location: "Mahabaleshwar, MH",
-      budget: "â‚¹70,000",
+      budget: "₹70,000",
       status: "pending_quote",
     },
     {
@@ -41,7 +41,7 @@ export default function ProfessionalDashboard() {
       type: "Brand Lookbook & Commercial Fashion",
       date: "Dec 05, 2026",
       location: "Bandra, Mumbai",
-      budget: "â‚¹40,000",
+      budget: "₹40,000",
       status: "pending_quote",
     },
   ];
@@ -61,7 +61,7 @@ export default function ProfessionalDashboard() {
                 <ShieldCheck className="w-3.5 h-3.5" /> Verified Studio
               </span>
             </div>
-            <p className="text-xs text-gray-400">Pune, Maharashtra â€¢ Pro SaaS Plan â€¢ 8 Years Experience</p>
+            <p className="text-xs text-gray-400">Pune, Maharashtra • Pro SaaS Plan • 8 Years Experience</p>
           </div>
         </div>
 
@@ -111,7 +111,7 @@ export default function ProfessionalDashboard() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-white text-sm">{l.client}</span>
-                  <span className="text-xs text-gray-400">â€¢ {l.type}</span>
+                  <span className="text-xs text-gray-400">• {l.type}</span>
                 </div>
                 <div className="text-xs text-gray-400">
                   Target Date: <strong className="text-gray-200">{l.date}</strong> | Location: <strong className="text-gray-200">{l.location}</strong> | Client Budget: <strong className="text-emerald-400">{l.budget}</strong>

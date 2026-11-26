@@ -2,7 +2,7 @@
 
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 class Settings(BaseSettings):
@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     PAYMENT_PROVIDER: str = "mock"
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.ENVIRONMENT == "production":
+            if self.SECRET_KEY.startswith("dev_") or len(self.SECRET_KEY) < 32:
+                raise ValueError("Insecure default SECRET_KEY detected in production environment.")
+            if self.CSRF_SECRET.startswith("dev_") or len(self.CSRF_SECRET) < 32:
+                raise ValueError("Insecure default CSRF_SECRET detected in production environment.")
+            self.COOKIE_SECURE = True
+        return self
 
 
 settings = Settings()
