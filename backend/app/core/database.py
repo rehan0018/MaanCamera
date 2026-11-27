@@ -1,23 +1,23 @@
 """Database connection, session lifecycle, and base model definitions."""
 
-import uuid
-from datetime import datetime, timezone
-from typing import AsyncGenerator
-from sqlalchemy import MetaData, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
+
+from sqlalchemy import DateTime, MetaData
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 from app.core.config import settings
 
 # Explicit naming conventions for constraints and indexes
 convention = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
-    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "ck": "%(constraint_name)s",
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
@@ -34,13 +34,13 @@ class TimestampMixin:
     """Standardized timestamp mixin using UTC with timezone."""
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 

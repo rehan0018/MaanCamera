@@ -1,9 +1,19 @@
 /**
  * MaanCamera Frontend API Client
- * Wraps REST endpoints with typed requests and cookie credentials.
+ * Wraps REST endpoints with generated OpenAPI schema types, cookie credentials, and CSRF protection.
  */
 
+import type { components, paths } from "./api.generated";
+
+export type ApiPaths = paths;
+export type ApiSchemas = components["schemas"];
+
+type StripApiPrefix<P extends string> = P extends `/api/v1${infer Rest}` ? Rest : never;
+export type ApiEndpoint = StripApiPrefix<keyof paths & string>;
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000/api/v1";
+const CSRF_COOKIE_NAME = "mc_csrf";
+const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -14,14 +24,69 @@ export interface ApiResponse<T> {
   };
 }
 
-export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const prefix = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+async function ensureCsrfToken(): Promise<string | null> {
+  const existing = getCookie(CSRF_COOKIE_NAME);
+  if (existing) {
+    return existing;
+  }
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/csrf`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const cookieToken = getCookie(CSRF_COOKIE_NAME);
+    if (cookieToken) {
+      return cookieToken;
+    }
+    if (res.ok) {
+      const payload = await res.json().catch(() => null);
+      return payload?.data?.csrf_token ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export async function apiFetch<T>(
+  endpoint: ApiEndpoint | `${ApiEndpoint}?${string}` | string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${endpoint}`;
+  const method = (options.method || "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> | undefined),
+  };
+
+  if (MUTATING_METHODS.has(method) && !headers["X-CSRF-Token"]) {
+    const csrfToken = await ensureCsrfToken();
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
+    method,
+    headers,
     credentials: "include", // Send HTTP-only session cookies
   });
 
@@ -35,14 +100,23 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
 
 export const api = {
   // Authentication
-  login: (data: { email: string; password: string }) =>
+  getCsrf: () => apiFetch<{ csrf_token: string }>("/auth/csrf"),
+  login: (data: ApiSchemas["UserLoginRequest"]) =>
     apiFetch<any>("/auth/login", { method: "POST", body: JSON.stringify(data) }),
-  register: (data: { full_name: string; email: string; phone?: string; password: string; role?: string }) =>
-    apiFetch<any>("/auth/register", { method: "POST", body: JSON.stringify(data) }),
-  logout: () =>
-    apiFetch<any>("/auth/logout", { method: "POST" }),
-  getCurrentUser: () =>
-    apiFetch<any>("/auth/me"),
+  register: (
+    data: Omit<ApiSchemas["UserRegisterRequest"], "role"> & {
+      role?: ApiSchemas["UserRegisterRequest"]["role"];
+    }
+  ) =>
+    apiFetch<any>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        ...data,
+        role: data.role ?? "customer",
+      } satisfies ApiSchemas["UserRegisterRequest"]),
+    }),
+  logout: () => apiFetch<any>("/auth/logout", { method: "POST" }),
+  getCurrentUser: () => apiFetch<any>("/users/me"),
 
   // Discovery & Search
   searchProfessionals: (params: { category_slug?: string; city?: string; verified_only?: boolean; page?: number; limit?: number }) => {
@@ -58,14 +132,14 @@ export const api = {
   compareProfessionals: (professionalIds: string[]) => {
     return apiFetch<any>("/search/compare", {
       method: "POST",
-      body: JSON.stringify({ professional_ids: professionalIds }),
+      body: JSON.stringify({ professional_ids: professionalIds } satisfies ApiSchemas["CompareRequest"]),
     });
   },
 
   aiSearch: (query: string) => {
     return apiFetch<any>("/search/ai", {
       method: "POST",
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query } satisfies ApiSchemas["NaturalLanguageSearchRequest"]),
     });
   },
 
@@ -74,13 +148,17 @@ export const api = {
   getProfessionalReviews: (id: string) => apiFetch<any>(`/professionals/${id}/reviews`),
 
   // Enquiries & Quotations
-  createEnquiry: (data: any) => apiFetch<any>("/enquiries", { method: "POST", body: JSON.stringify(data) }),
+  createEnquiry: (data: ApiSchemas["EnquiryCreateRequest"]) =>
+    apiFetch<any>("/enquiries", { method: "POST", body: JSON.stringify(data) }),
   getMyEnquiries: () => apiFetch<any[]>("/enquiries/me"),
   acceptQuotation: (quotationId: string) => apiFetch<any>(`/quotations/${quotationId}/accept`, { method: "POST" }),
 
   // Bookings & Payments
   getMyBookings: () => apiFetch<any[]>("/bookings/me"),
-  createPaymentOrder: (data: any) => apiFetch<any>("/payments/create-order", { method: "POST", body: JSON.stringify(data) }),
-  verifyPayment: (data: any) => apiFetch<any>("/payments/verify", { method: "POST", body: JSON.stringify(data) }),
-  submitReview: (bookingId: string, review: any) => apiFetch<any>(`/bookings/${bookingId}/review`, { method: "POST", body: JSON.stringify(review) }),
+  createPaymentOrder: (data: ApiSchemas["CreatePaymentOrderRequest"]) =>
+    apiFetch<any>("/payments/create-order", { method: "POST", body: JSON.stringify(data) }),
+  verifyPayment: (data: ApiSchemas["VerifyPaymentRequest"]) =>
+    apiFetch<any>("/payments/verify", { method: "POST", body: JSON.stringify(data) }),
+  submitReview: (bookingId: string, review: ApiSchemas["ReviewCreateRequest"]) =>
+    apiFetch<any>(`/bookings/${bookingId}/review`, { method: "POST", body: JSON.stringify(review) }),
 };

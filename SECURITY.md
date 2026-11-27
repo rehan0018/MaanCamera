@@ -34,9 +34,11 @@ We commit to:
 
 ---
 
-## 3. Security Standards Enforced
-- Argon2id password hashing with time cost 2 and 64MB memory cost.
-- Secure, HTTP-only SameSite cookie session management.
-- Cryptographic HMAC-SHA256 signature verification on payment provider webhooks.
-- EXIF metadata sanitization on all publicly served client photos.
-- Row-Level Security (RLS) and ownership validation on all mutate operations.
+## 3. Security Controls Implemented
+
+- **Password & Session Security**: Argon2id password hashing (`time_cost=2`, `64 MiB` memory cost) and SHA-256 hashed HTTP-only session cookies (`SameSite=Lax`, forced `Secure` when `ENVIRONMENT=production`, fail-fast config validation for secrets and payment provider).
+- **CSRF & Origin Protection**: Middleware validation of `Origin`/`Referer` headers alongside HMAC-signed double-submit `mc_csrf` / `X-CSRF-Token` verification on cookie-authenticated `POST`/`PATCH`/`PUT`/`DELETE` requests.
+- **Rate Limiting**: Valkey-backed `slowapi` rate throttling on authentication (`5/minute` per IP on login/register) and AI endpoints (`10/minute` per user).
+- **Payment Integrity**: Server-side order amount computation, fail-closed HMAC-SHA256 verification for payments and webhooks, `SELECT ... FOR UPDATE` row locking on booking updates, and unique idempotency constraint on `(provider, provider_event_id)`.
+- **Media Upload Hardening**: Strict MIME (`image/jpeg`, `image/png`, `image/webp`) and extension allowlisting, server-generated S3 keys with signed `Content-Length` bounds (`15 MiB` max), and asynchronous Pillow format verification + EXIF metadata stripping before public publishing.
+- **Authorization & Database Isolation**: Application-layer RBAC dependencies and resource ownership checks across all mutating endpoints, reinforced by PostgreSQL Row-Level Security (RLS) policies on `bookings`, `enquiries`, and `payments` bound to transaction-local `app.current_user_id` / `app.current_user_role` session configuration.

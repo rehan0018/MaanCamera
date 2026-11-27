@@ -1,15 +1,13 @@
 """Search and Comparison HTTP endpoints."""
 
-from typing import List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.search.schemas import (
-    SearchFilterParams,
-    SearchResponse,
     CompareRequest,
-    ComparisonMatrix,
+    SearchFilterParams,
 )
 from app.modules.search.service import SearchService
 

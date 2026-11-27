@@ -61,24 +61,30 @@ MaanCamera/
 ├── .github/
 │   └── workflows/ci.yml         # Automated GitHub Actions CI pipeline
 ├── api/
-│   └── openapi.yaml             # Complete OpenAPI 3.1.0 REST API specification
+│   ├── openapi.yaml             # Generated OpenAPI 3.1.0 REST API specification
+│   └── openapi.json             # JSON OpenAPI mirror for codegen
 ├── database/
-│   ├── schema.sql               # PostgreSQL 16 schema (32 tables + pgvector + RLS)
-│   └── seed.sql                 # Indian marketplace seed data (Pune, Mumbai, Delhi)
+│   └── README.md                # Schema authority notes (Alembic migrations & Python seed)
 ├── backend/
+│   ├── alembic/                 # PostgreSQL 16 + pgvector + RLS migrations (single source of truth)
 │   ├── app/
-│   │   ├── core/                # Config, database, security, exceptions, responses
+│   │   ├── core/                # Config, database, security, rate limiting, exceptions, responses
+│   │   ├── db/seed.py           # Idempotent UUIDv5 + Argon2id dev seed runner
 │   │   ├── modules/             # Identity, Professionals, Portfolios, Search,
-│   │   │                        # Enquiries, Quotations, Bookings, Payments, Reviews, AI
+│   │   │                        # Enquiries, Quotations, Bookings, Payments, Reviews, AI, Platform
 │   │   ├── integrations/        # Storage (SeaweedFS S3), AI Runtime (Ollama)
-│   │   ├── workers/             # Celery async media & embedding worker tasks
-│   │   └── main.py              # FastAPI app mounting routers & middlewares
+│   │   ├── workers/             # Celery async media EXIF-stripping & embedding worker tasks
+│   │   └── main.py              # FastAPI app mounting routers, CSRF & rate-limit middlewares
 │   ├── Dockerfile
-│   └── pyproject.toml
+│   ├── pyproject.toml
+│   └── uv.lock
 ├── frontend/
 │   ├── app/                     # Next.js 14 App Router pages (Public, Search, Dashboards)
 │   ├── components/              # Navbar, Footer, Professional Cards
-│   ├── lib/api.ts               # Typed frontend REST client
+│   ├── lib/api.generated.ts     # Generated TypeScript OpenAPI types
+│   ├── lib/api.ts               # Typed frontend REST client with automatic CSRF handling
+│   ├── Dockerfile
+│   ├── pnpm-lock.yaml
 │   ├── tailwind.config.ts
 │   └── package.json
 ├── docs/                        # Complete 9-part architecture & engineering documentation
@@ -88,8 +94,9 @@ MaanCamera/
 │   ├── 04_SAAS/                 # Multi-tenancy, billing, subscriptions
 │   └── 08_COMPLIANCE/           # India DPDPA 2023, copyright, privacy
 ├── .env.example                 # Comprehensive environment variable blueprint
-├── docker-compose.yml           # Multi-container orchestration stack
+├── docker-compose.yml           # Full local multi-container orchestration stack
 ├── docker-compose.dev.yml       # Local development overrides
+├── docker-compose.prod.yml      # Hardened production stack (non-root, internal data tier)
 ├── LICENSE                      # MIT License
 ├── LICENSE_POLICY.md            # Free & Open Source engineering governance
 ├── DEPENDENCY_ALLOWLIST.md      # Approved license criteria
@@ -122,16 +129,16 @@ cp .env.example .env
 docker compose up -d postgres valkey seaweedfs ollama
 ```
 
-*This spins up PostgreSQL 16 with pgvector (auto-loading `schema.sql` and `seed.sql`), Valkey 7.2 on port 6379, SeaweedFS S3 on port 8333, and Ollama on port 11434.*
+*This spins up PostgreSQL 16 with pgvector on port 5432, Valkey 7.2 on port 6379, SeaweedFS S3 on port 8333, and Ollama on port 11434. For full containerized local runs, `docker compose up -d` also executes the `migrate` job (Alembic + seed) before booting backend, Celery worker, and frontend. Production deployments should use `docker compose -f docker-compose.prod.yml up -d`.*
 
-### Step 3: Run the Modular Backend
+### Step 3: Migrate, Seed, and Run the Modular Backend
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
+uv sync --frozen --extra dev
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run alembic upgrade head
+uv run python -m app.db.seed
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 - Interactive API Documentation: [http://localhost:8000/docs](http://localhost:8000/docs)
 - OpenAPI Specification: [http://localhost:8000/api/v1/openapi.json](http://localhost:8000/api/v1/openapi.json)
@@ -139,7 +146,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ### Step 4: Run the Next.js Frontend
 ```bash
 cd ../frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 - Web Application: [http://localhost:3000](http://localhost:3000)

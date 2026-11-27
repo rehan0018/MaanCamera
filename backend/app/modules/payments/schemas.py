@@ -2,13 +2,12 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreatePaymentOrderRequest(BaseModel):
     booking_id: uuid.UUID
-    amount_minor: Optional[int] = Field(None, gt=0)
     currency_code: str = Field("INR", max_length=3)
     payment_type: str = Field("advance", pattern="^(advance|balance|full)$")
 
@@ -20,30 +19,30 @@ class CreatePaymentOrderResponse(BaseModel):
     provider_order_id: str
     amount_minor: int
     currency_code: str
-    client_secret: Optional[str] = None
+    client_secret: str | None = None
 
 
 class VerifyPaymentRequest(BaseModel):
     payment_id: uuid.UUID
     provider_payment_id: str
-    provider_signature: Optional[str] = None
+    provider_signature: str = Field(..., min_length=16, max_length=256)
+    amount_minor: int | None = Field(None, gt=0)
 
 
 class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     booking_id: uuid.UUID
     provider: str
-    provider_order_id: Optional[str] = None
-    provider_payment_id: Optional[str] = None
+    provider_order_id: str | None = None
+    provider_payment_id: str | None = None
     amount_minor: int
     currency_code: str
     payment_status: str
     payment_type: str
-    verified_at: Optional[datetime] = None
+    verified_at: datetime | None = None
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class RefundRequest(BaseModel):

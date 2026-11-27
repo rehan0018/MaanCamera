@@ -1,17 +1,18 @@
 """Quotation service with versioning and booking creation on acceptance."""
 
 import uuid
-from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional, Tuple
-from sqlalchemy import select, desc
+from datetime import UTC, date, datetime, timedelta
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import BusinessRuleViolationException, ForbiddenException, NotFoundException
+from app.modules.bookings.models import Booking
+from app.modules.enquiries.models import Enquiry, EnquiryRecipient
+from app.modules.identity.models import User
+from app.modules.professionals.models import ProfessionalProfile
 from app.modules.quotations.models import Quotation
 from app.modules.quotations.schemas import QuotationCreateRequest, QuotationRevisionRequest
-from app.modules.enquiries.models import Enquiry, EnquiryRecipient
-from app.modules.bookings.models import Booking
-from app.modules.professionals.models import ProfessionalProfile
-from app.modules.identity.models import User
-from app.core.exceptions import NotFoundException, BusinessRuleViolationException, ForbiddenException
 
 
 class QuotationService:
@@ -27,7 +28,7 @@ class QuotationService:
             raise NotFoundException("Enquiry", req.enquiry_id)
 
         # Resolve quoting professional profile for current_user
-        prof_stmt = select(ProfessionalProfile).where(ProfessionalProfile.user_id == current_user.id)
+        prof_stmt = select(ProfessionalProfile).where(ProfessionalProfile.owner_user_id == current_user.id)
         if req.professional_id and current_user.role == "admin":
             prof_stmt = select(ProfessionalProfile).where(ProfessionalProfile.id == req.professional_id)
         elif req.professional_id:
@@ -52,8 +53,8 @@ class QuotationService:
         if not recipient and current_user.role != "admin":
             raise BusinessRuleViolationException("You were not invited to quote on this enquiry.")
 
-        valid_until = req.valid_until or (datetime.now(timezone.utc) + timedelta(days=7))
-        if valid_until <= datetime.now(timezone.utc):
+        valid_until = req.valid_until or (datetime.now(UTC) + timedelta(days=7))
+        if valid_until <= datetime.now(UTC):
             raise BusinessRuleViolationException("Quotation expiration date must be in the future.")
 
         quotation = Quotation(
@@ -92,7 +93,7 @@ class QuotationService:
         if current_user.role != "admin":
             prof_stmt = select(ProfessionalProfile).where(
                 ProfessionalProfile.id == old_quotation.professional_id,
-                ProfessionalProfile.user_id == current_user.id,
+                ProfessionalProfile.owner_user_id == current_user.id,
             )
             prof_res = await db.execute(prof_stmt)
             if not prof_res.scalar_one_or_none():
@@ -105,7 +106,7 @@ class QuotationService:
             raise BusinessRuleViolationException("Advance amount cannot exceed total agreed amount.")
 
         valid_until = req.valid_until or old_quotation.valid_until
-        if valid_until <= datetime.now(timezone.utc):
+        if valid_until <= datetime.now(UTC):
             raise BusinessRuleViolationException("Quotation expiration date must be in the future.")
 
         # Mark previous version revised (matching schema check constraint!)
@@ -133,7 +134,7 @@ class QuotationService:
     @staticmethod
     async def accept_quotation(
         db: AsyncSession, quotation_id: uuid.UUID, customer_id: uuid.UUID
-    ) -> Tuple[Quotation, Booking]:
+    ) -> tuple[Quotation, Booking]:
         stmt = select(Quotation).where(Quotation.id == quotation_id)
         res = await db.execute(stmt)
         quotation = res.scalar_one_or_none()

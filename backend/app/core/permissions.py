@@ -1,9 +1,11 @@
 """Role-based access control dependencies and permission utilities."""
 
-from typing import Callable, List
+from collections.abc import Callable
+
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenException
 from app.modules.identity.models import User
@@ -33,7 +35,7 @@ async def get_current_professional_profile(
     db: AsyncSession = Depends(get_db),
 ) -> ProfessionalProfile:
     """Dependency resolving the authenticated user's ProfessionalProfile."""
-    stmt = select(ProfessionalProfile).where(ProfessionalProfile.user_id == current_user.id)
+    stmt = select(ProfessionalProfile).where(ProfessionalProfile.owner_user_id == current_user.id)
     res = await db.execute(stmt)
     prof = res.scalar_one_or_none()
     if not prof:

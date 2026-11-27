@@ -20,7 +20,7 @@ export default function LoginPage() {
 
     try {
       const res = await api.login({ email, password });
-      const user = res.data;
+      const user = res.data.user || res.data;
       if (user.role === "professional") {
         router.push("/professional/dashboard");
       } else if (user.role === "admin") {

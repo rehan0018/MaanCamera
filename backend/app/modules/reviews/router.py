@@ -1,17 +1,18 @@
 """Review HTTP endpoints."""
 
 import uuid
-from typing import List
+
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
 from app.modules.reviews.schemas import (
+    ContentReportRequest,
     ReviewCreateRequest,
     ReviewResponse,
-    ContentReportRequest,
 )
 from app.modules.reviews.service import ReviewService
 

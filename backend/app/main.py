@@ -1,31 +1,34 @@
 """MaanCamera Modular Monolith FastAPI Application Entrypoint."""
 
+import logging
 import time
 import uuid
-import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
+
 from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from app.core.database import AsyncSessionLocal
-from app.core.config import settings
-from app.core.exceptions import AppException
-from app.core.responses import error_response
 
-# Module routers
-from app.modules.identity.router import router as identity_router
-from app.modules.professionals.router import router as professionals_router
-from app.modules.portfolios.router import router as portfolios_router
-from app.modules.search.router import router as search_router
-from app.modules.enquiries.router import router as enquiries_router
-from app.modules.quotations.router import router as quotations_router
-from app.modules.bookings.router import router as bookings_router
-from app.modules.payments.router import router as payments_router
-from app.modules.reviews.router import router as reviews_router
+from app.core.config import settings
+from app.core.database import AsyncSessionLocal
+from app.core.exceptions import AppException
+from app.core.rate_limit import limiter
+from app.core.responses import error_response
+from app.core.security import verify_csrf_token
 from app.modules.ai.router import router as ai_router
+from app.modules.bookings.router import router as bookings_router
+from app.modules.enquiries.router import router as enquiries_router
+from app.modules.identity.router import router as identity_router
+from app.modules.payments.router import router as payments_router
+from app.modules.portfolios.router import router as portfolios_router
+from app.modules.professionals.router import router as professionals_router
+from app.modules.quotations.router import router as quotations_router
+from app.modules.reviews.router import router as reviews_router
+from app.modules.search.router import router as search_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("maancamera")
@@ -48,8 +51,75 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+
+
+def _normalize_origin(raw: str) -> str:
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}".lower()
+    return raw.rstrip("/").lower()
+
+
 # ------------------------------------------------------------------------------
-# 1. CORS Middleware
+# 1. Request ID, Audit & CSRF Middleware
+# ------------------------------------------------------------------------------
+@app.middleware("http")
+async def security_and_request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request.state.request_id = request_id
+    start_time = time.perf_counter()
+
+    # Enforce Origin + Double-Submit CSRF checks on state-changing HTTP requests
+    if request.method in ("POST", "PATCH", "PUT", "DELETE"):
+        webhook_prefix = f"{settings.API_V1_PREFIX}/payments/webhooks/"
+        if not request.url.path.startswith(webhook_prefix):
+            allowed_origins = {
+                _normalize_origin(o)
+                for o in [*settings.CORS_ORIGINS, settings.FRONTEND_URL, settings.BACKEND_URL, "http://testserver"]
+            }
+
+            origin = request.headers.get("Origin")
+            referer = request.headers.get("Referer")
+            if origin:
+                if _normalize_origin(origin) not in allowed_origins:
+                    return error_response(
+                        code="CSRF_ORIGIN_MISMATCH",
+                        message="Cross-origin request rejected.",
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        request_id=request_id,
+                    )
+            elif referer and _normalize_origin(referer) not in allowed_origins:
+                return error_response(
+                    code="CSRF_REFERER_MISMATCH",
+                    message="Cross-origin referer rejected.",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    request_id=request_id,
+                )
+
+            # Enforce double-submit CSRF token when cookie session is active (exempt Bearer-only)
+            has_session_cookie = settings.SESSION_COOKIE_NAME in request.cookies
+            if has_session_cookie:
+                cookie_csrf = request.cookies.get(settings.CSRF_COOKIE_NAME, "")
+                header_csrf = request.headers.get("X-CSRF-Token", "")
+                if not verify_csrf_token(cookie_csrf, header_csrf):
+                    return error_response(
+                        code="CSRF_TOKEN_INVALID",
+                        message="Missing or invalid CSRF token.",
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        request_id=request_id,
+                    )
+
+    response = await call_next(request)
+
+    process_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = str(process_time_ms)
+    return response
+
+
+# ------------------------------------------------------------------------------
+# 2. CORS Middleware (registered last to be outermost)
 # ------------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -62,25 +132,19 @@ app.add_middleware(
 
 
 # ------------------------------------------------------------------------------
-# 2. Request ID & Audit Middleware
-# ------------------------------------------------------------------------------
-@app.middleware("http")
-async def request_context_middleware(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    request.state.request_id = request_id
-    start_time = time.perf_counter()
-
-    response = await call_next(request)
-
-    process_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-Process-Time-Ms"] = str(process_time_ms)
-    return response
-
-
-# ------------------------------------------------------------------------------
 # 3. Global Exception Handlers
 # ------------------------------------------------------------------------------
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    return error_response(
+        code="RATE_LIMIT_EXCEEDED",
+        message=f"Rate limit exceeded: {exc.detail}",
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        request_id=req_id,
+    )
+
+
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
     req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
@@ -96,11 +160,12 @@ async def app_exception_handler(request: Request, exc: AppException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    safe_errors = jsonable_encoder(exc.errors(), custom_encoder={BaseException: str})
     return error_response(
         code="VALIDATION_ERROR",
         message="Request parameters failed validation.",
-        details={"errors": exc.errors()},
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        details={"errors": safe_errors},
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         request_id=req_id,
     )
 

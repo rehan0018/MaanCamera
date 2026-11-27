@@ -28,12 +28,18 @@ Modular monolith backend powering MaanCamera — India's trusted AI-powered mark
 ## Getting Started
 
 ```bash
-# Install dependencies
-pip install -e ".[dev]"
+# Install locked dependencies (including dev/test tools)
+uv sync --frozen --extra dev
 
-# Run tests
-pytest
+# Apply PostgreSQL + pgvector + RLS migrations and load deterministic dev seed
+uv run alembic upgrade head
+uv run python -m app.db.seed
+
+# Run checks and tests
+uv run ruff check .
+uv run mypy app
+uv run pytest -q
 
 # Start development server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```

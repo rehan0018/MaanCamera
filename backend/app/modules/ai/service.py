@@ -2,30 +2,30 @@
 
 import re
 import uuid
-from typing import List, Optional, Dict, Any, Tuple
-from sqlalchemy import select, func, desc
+from typing import Any
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.modules.professionals.models import ProfessionalProfile, Category, Service
-from app.modules.portfolios.models import Portfolio, Project, MediaAsset
-from app.modules.reviews.models import Review
-from app.modules.ai.models import RecommendationSession, RecommendationItem
+
+from app.core.config import settings
+from app.integrations.ai_runtime.ollama_client import OllamaAIProvider
+from app.modules.ai.models import RecommendationItem, RecommendationSession
 from app.modules.ai.schemas import (
-    NaturalLanguageSearchRequest,
-    ExtractedRequirements,
-    RecommendationResponse,
-    RecommendationItemResponse,
     PortfolioAnalysisResponse,
+    RecommendationItemResponse,
+    RecommendationResponse,
     ReviewSummaryResponse,
 )
-from app.integrations.ai_runtime.ollama_client import OllamaAIProvider
-from app.core.config import settings
+from app.modules.portfolios.models import Portfolio, Project
+from app.modules.professionals.models import Category, ProfessionalProfile, Service
+from app.modules.reviews.models import Review
 
 
 class AIService:
     ollama_provider = OllamaAIProvider()
 
     @classmethod
-    async def extract_query_requirements(cls, query: str) -> Dict[str, Any]:
+    async def extract_query_requirements(cls, query: str) -> dict[str, Any]:
         """Extract structured query requirements using Ollama with deterministic rule fallback."""
         schema = {
             "type": "object",
@@ -61,7 +61,7 @@ class AIService:
                 pass  # Fall back to heuristic rule-based extraction
 
         # Robust regex fallback
-        extracted: Dict[str, Any] = {
+        extracted: dict[str, Any] = {
             "category": [],
             "location": {},
             "style": [],
@@ -105,7 +105,7 @@ class AIService:
         cls,
         db: AsyncSession,
         query: str,
-        customer_id: Optional[uuid.UUID] = None,
+        customer_id: uuid.UUID | None = None,
     ) -> RecommendationResponse:
         requirements = await cls.extract_query_requirements(query)
         city = requirements.get("location", {}).get("city")
@@ -128,12 +128,12 @@ class AIService:
 
         # Stage 2: 7-Factor Weighted Relevance Ranking
         # Formula: Score = 0.25*S + 0.20*V + 0.15*R + 0.15*B + 0.10*A + 0.10*E + 0.05*T
-        scored_candidates: List[Tuple[ProfessionalProfile, float, str, List[str], int]] = []
+        scored_candidates: list[tuple[ProfessionalProfile, float, str, list[str], int]] = []
 
         for p in candidates:
             # Query lowest starting price from active services (avoids crash on p.starting_price_minor)
             price_stmt = select(func.min(Service.starting_price_minor)).where(
-                Service.professional_id == p.id, Service.is_active == True
+                Service.professional_id == p.id, Service.is_active.is_(True)
             )
             price_res = await db.execute(price_stmt)
             cand_starting_price = price_res.scalar() or 0
@@ -142,7 +142,7 @@ class AIService:
             cat_stmt = (
                 select(Category.slug)
                 .join(Service, Service.category_id == Category.id)
-                .where(Service.professional_id == p.id, Service.is_active == True)
+                .where(Service.professional_id == p.id, Service.is_active.is_(True))
             )
             cat_res = await db.execute(cat_stmt)
             prof_cats = [cat.lower() for cat in cat_res.scalars().all()]
@@ -238,7 +238,7 @@ class AIService:
         db.add(session)
         await db.flush()
 
-        results: List[RecommendationItemResponse] = []
+        results: list[RecommendationItemResponse] = []
         for idx, (cand, score, explanation, projs, start_price) in enumerate(scored_candidates[:10], start=1):
             item = RecommendationItem(
                 session_id=session.id,
@@ -287,7 +287,7 @@ class AIService:
         categories = [project.style] if (project and project.style) else ["Commercial", "Creative Portfolio"]
         tags = project.tags if (project and project.tags) else ["natural-tones", "high-resolution", "cinematic"]
         title_context = project.title if project else "Portfolio Asset"
-        desc_context = project.description if project else "Curated professional project asset."
+        desc_context = project.description if (project and project.description) else "Curated professional project asset."
 
         return PortfolioAnalysisResponse(
             detected_categories=categories,

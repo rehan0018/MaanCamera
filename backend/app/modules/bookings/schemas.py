@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -16,8 +16,8 @@ class BookingCancelRequest(BaseModel):
 
 class BookingResponse(BaseModel):
     id: uuid.UUID
-    enquiry_id: Optional[uuid.UUID] = None
-    quotation_id: Optional[uuid.UUID] = None
+    enquiry_id: uuid.UUID | None = None
+    quotation_id: uuid.UUID | None = None
     customer_id: uuid.UUID
     professional_id: uuid.UUID
     shoot_date: date
@@ -27,7 +27,7 @@ class BookingResponse(BaseModel):
     currency_code: str
     booking_status: str
     completion_status: str
-    cancellation_reason: Optional[str] = None
+    cancellation_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 

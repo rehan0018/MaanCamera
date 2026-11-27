@@ -1,5 +1,5 @@
 # Local Development Support Compose File
-# Use this when running FastAPI and Next.js natively on your host machine:
+# Use when running FastAPI (`alembic upgrade head && uvicorn ...`) and Next.js natively on host:
 # docker compose -f docker-compose.dev.yml up -d
 services:
   postgres:
@@ -7,30 +7,33 @@ services:
     container_name: maancamera_dev_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: maancamera
-      POSTGRES_PASSWORD: maancamera_local_dev_password
-      POSTGRES_DB: maancamera_db
+      POSTGRES_USER: ${POSTGRES_USER:-maancamera}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maancamera_local_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-maancamera_db}
     ports:
       - "5432:5432"
     volumes:
       - dev_postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U maancamera -d maancamera_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maancamera} -d ${POSTGRES_DB:-maancamera_db}"]
       interval: 3s
       timeout: 3s
       retries: 5
 
   valkey:
-    image: valkey/valkey:7.2-alpine
+    image: valkey/valkey:7.2.6-alpine
     container_name: maancamera_dev_valkey
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
 
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:3.79
     container_name: maancamera_dev_seaweedfs
     restart: unless-stopped
     command: "server -dir=/data -s3 -s3.port=8333 -filer -ip=localhost"
@@ -42,7 +45,7 @@ services:
       - dev_seaweedfs_data:/data
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     container_name: maancamera_dev_ollama
     restart: unless-stopped
     ports:

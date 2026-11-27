@@ -1,20 +1,21 @@
 """Quotation HTTP endpoints."""
 
 import uuid
-from typing import List
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.responses import success_response
+from app.modules.bookings.schemas import BookingResponse
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
 from app.modules.quotations.schemas import (
     QuotationCreateRequest,
-    QuotationRevisionRequest,
     QuotationResponse,
+    QuotationRevisionRequest,
 )
 from app.modules.quotations.service import QuotationService
-from app.modules.bookings.schemas import BookingResponse
 
 router = APIRouter(prefix="", tags=["Quotations"])
 

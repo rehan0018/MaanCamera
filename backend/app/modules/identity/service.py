@@ -1,20 +1,20 @@
 """Service for user authentication, registration, and session lifecycle."""
 
-import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.exceptions import UnauthorizedException, ConflictException, NotFoundException
+
+from app.core.exceptions import ConflictException, UnauthorizedException
 from app.core.security import (
-    hash_password,
-    verify_password,
-    generate_session_token,
-    hash_session_token,
     calculate_session_expiry,
+    generate_session_token,
+    hash_password,
+    hash_session_token,
+    verify_password,
 )
 from app.modules.identity.models import User, UserSession
-from app.modules.identity.schemas import UserRegisterRequest, UserLoginRequest
+from app.modules.identity.schemas import UserLoginRequest, UserRegisterRequest
 
 
 class IdentityService:
@@ -40,7 +40,7 @@ class IdentityService:
         return user
 
     @staticmethod
-    async def authenticate(db: AsyncSession, req: UserLoginRequest, user_agent: Optional[str] = None, ip: Optional[str] = None) -> tuple[User, str]:
+    async def authenticate(db: AsyncSession, req: UserLoginRequest, user_agent: str | None = None, ip: str | None = None) -> tuple[User, str]:
         stmt = select(User).where(User.email == req.email.lower())
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
@@ -66,12 +66,12 @@ class IdentityService:
         return user, plain_token
 
     @staticmethod
-    async def get_user_by_session_token(db: AsyncSession, token: str) -> Optional[User]:
+    async def get_user_by_session_token(db: AsyncSession, token: str) -> User | None:
         hashed_token = hash_session_token(token)
         stmt = select(UserSession).where(
             UserSession.session_token_hash == hashed_token,
             UserSession.revoked_at.is_(None),
-            UserSession.expires_at > datetime.now(timezone.utc),
+            UserSession.expires_at > datetime.now(UTC),
         )
         res = await db.execute(stmt)
         session = res.scalar_one_or_none()
@@ -79,7 +79,7 @@ class IdentityService:
             return None
 
         # Update last used
-        session.last_used_at = datetime.now(timezone.utc)
+        session.last_used_at = datetime.now(UTC)
         await db.flush()
 
         user_stmt = select(User).where(User.id == session.user_id)
@@ -89,6 +89,6 @@ class IdentityService:
     @staticmethod
     async def revoke_session(db: AsyncSession, token: str) -> bool:
         hashed_token = hash_session_token(token)
-        stmt = update(UserSession).where(UserSession.session_token_hash == hashed_token).values(revoked_at=datetime.now(timezone.utc))
+        stmt = update(UserSession).where(UserSession.session_token_hash == hashed_token).values(revoked_at=datetime.now(UTC))
         await db.execute(stmt)
         return True

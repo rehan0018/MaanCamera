@@ -1,17 +1,20 @@
-"""Service layer for professional profile retrieval, creation, and services."""
+"""Service layer for professional profile retrieval, creation, updates, and services."""
 
+import re
 import uuid
-from typing import List, Optional
+
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.exceptions import NotFoundException
-from app.modules.professionals.models import (
-    ProfessionalProfile,
-    Category,
-    Service,
+from sqlalchemy.orm import selectinload
+
+from app.core.exceptions import ConflictException, ForbiddenException, NotFoundException
+from app.modules.identity.models import User
+from app.modules.professionals.models import Category, ProfessionalProfile, Service
+from app.modules.professionals.schemas import (
+    ProfileCreateRequest,
+    ProfileUpdateRequest,
+    ServiceCreateRequest,
 )
-from app.modules.professionals.schemas import ProfileCreateRequest
 
 
 class ProfessionalService:
@@ -38,7 +41,7 @@ class ProfessionalService:
         return prof
 
     @staticmethod
-    async def get_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> Optional[ProfessionalProfile]:
+    async def get_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> ProfessionalProfile | None:
         stmt = (
             select(ProfessionalProfile)
             .options(
@@ -52,16 +55,21 @@ class ProfessionalService:
         return res.scalar_one_or_none()
 
     @staticmethod
-    async def get_categories(db: AsyncSession) -> List[Category]:
+    async def get_categories(db: AsyncSession) -> list[Category]:
         stmt = select(Category).where(Category.is_active.is_(True)).order_by(Category.display_order.asc())
         res = await db.execute(stmt)
         return list(res.scalars().all())
 
     @staticmethod
-    async def create_profile(db: AsyncSession, user_id: uuid.UUID, req: ProfileCreateRequest) -> ProfessionalProfile:
-        slug = req.display_name.lower().replace(" ", "-").replace("&", "and")
-        # Ensure unique slug
-        unique_slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+    async def create_profile(
+        db: AsyncSession, user_id: uuid.UUID, req: ProfileCreateRequest
+    ) -> ProfessionalProfile:
+        existing = await ProfessionalService.get_by_user_id(db, user_id)
+        if existing:
+            raise ConflictException("A professional profile already exists for this user.")
+
+        slug_base = re.sub(r"[^a-z0-9]+", "-", req.display_name.lower()).strip("-") or "professional"
+        unique_slug = f"{slug_base}-{uuid.uuid4().hex[:6]}"
         profile = ProfessionalProfile(
             owner_user_id=user_id,
             display_name=req.display_name,
@@ -76,5 +84,77 @@ class ProfessionalService:
             travel_available=req.travel_available,
         )
         db.add(profile)
-        await db.flush()
+        await db.commit()
         return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
+
+    @staticmethod
+    async def update_profile(
+        db: AsyncSession,
+        profile_id: uuid.UUID,
+        current_user: User,
+        req: ProfileUpdateRequest,
+    ) -> ProfessionalProfile:
+        stmt = select(ProfessionalProfile).where(ProfessionalProfile.id == profile_id)
+        res = await db.execute(stmt)
+        profile = res.scalar_one_or_none()
+        if not profile:
+            raise NotFoundException("ProfessionalProfile", profile_id)
+
+        if current_user.role != "admin" and profile.owner_user_id != current_user.id:
+            raise ForbiddenException("You do not have permission to update this professional profile.")
+
+        updates = req.model_dump(exclude_unset=True)
+        for field, value in updates.items():
+            setattr(profile, field, value)
+
+        await db.commit()
+        return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
+
+    @staticmethod
+    async def delete_profile(
+        db: AsyncSession,
+        profile_id: uuid.UUID,
+        current_user: User,
+    ) -> bool:
+        stmt = select(ProfessionalProfile).where(ProfessionalProfile.id == profile_id)
+        res = await db.execute(stmt)
+        profile = res.scalar_one_or_none()
+        if not profile:
+            raise NotFoundException("ProfessionalProfile", profile_id)
+
+        if current_user.role != "admin" and profile.owner_user_id != current_user.id:
+            raise ForbiddenException("You do not have permission to delete this professional profile.")
+
+        await db.delete(profile)
+        await db.commit()
+        return True
+
+    @staticmethod
+    async def create_service(
+        db: AsyncSession,
+        current_user: User,
+        req: ServiceCreateRequest,
+    ) -> Service:
+        profile = await ProfessionalService.get_by_user_id(db, current_user.id)
+        if not profile:
+            raise ForbiddenException("You must create a professional profile before adding services.")
+
+        cat = await db.get(Category, req.category_id)
+        if not cat:
+            raise NotFoundException("Category", req.category_id)
+
+        service = Service(
+            professional_id=profile.id,
+            category_id=req.category_id,
+            name=req.name,
+            description=req.description,
+            pricing_type=req.pricing_type,
+            starting_price_minor=req.starting_price_minor,
+            currency_code=req.currency_code,
+            is_active=True,
+        )
+        db.add(service)
+        await db.commit()
+        stmt = select(Service).options(selectinload(Service.packages)).where(Service.id == service.id)
+        res = await db.execute(stmt)
+        return res.scalar_one()

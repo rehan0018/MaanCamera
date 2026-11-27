@@ -2,31 +2,32 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# Install system dependencies (build-essential, libpq for PostgreSQL)
+# Install system dependencies (libpq for PostgreSQL, curl for healthchecks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
-COPY pyproject.toml README.md ./
-RUN pip install --upgrade pip && \
-    pip install .
+# Install locked dependencies via uv
+COPY pyproject.toml uv.lock README.md ./
+RUN pip install --no-cache-dir uv && \
+    uv sync --frozen --no-dev --no-install-project
 
 # Create unprivileged application user
-RUN useradd -m -u 1000 appuser && \
+RUN useradd -m -u 1000 appuser
+
+# Copy application source and install project into locked venv
+COPY . .
+RUN uv sync --frozen --no-dev && \
     chown -R appuser:appuser /app
 
-# Copy application source code
-COPY . .
-RUN chown -R appuser:appuser /app
-
+ENV PATH="/app/.venv/bin:$PATH"
 USER appuser
 
 EXPOSE 8000

@@ -1,18 +1,16 @@
 """Payment HTTP endpoints."""
 
-import uuid
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
 from app.modules.payments.schemas import (
     CreatePaymentOrderRequest,
-    CreatePaymentOrderResponse,
-    VerifyPaymentRequest,
     PaymentResponse,
-    RefundRequest,
+    VerifyPaymentRequest,
 )
 from app.modules.payments.service import PaymentService
 
@@ -46,10 +44,10 @@ async def payment_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     body_bytes = await request.body()
-    body_str = body_bytes.decode()
-    event_id = request.headers.get("X-Razorpay-Event-Id", request.headers.get("X-Event-Id"))
-    event_type = request.headers.get("X-Razorpay-Event-Type", "payment.captured")
-    signature = request.headers.get("X-Razorpay-Signature")
+    body_str = body_bytes.decode("utf-8")
+    event_id = request.headers.get("X-Razorpay-Event-Id") or request.headers.get("X-Event-Id")
+    event_type = request.headers.get("X-Razorpay-Event-Type") or "payment.captured"
+    signature = request.headers.get("X-Razorpay-Signature") or request.headers.get("X-Mock-Signature")
 
     await PaymentService.process_webhook(
         db, provider, event_id, event_type, body_str, signature=signature

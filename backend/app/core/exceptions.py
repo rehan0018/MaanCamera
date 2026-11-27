@@ -1,6 +1,6 @@
 """Custom exception hierarchy for domain errors and API handlers."""
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class MaanCameraException(Exception):
@@ -10,7 +10,7 @@ class MaanCameraException(Exception):
         self,
         code: str,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
         status_code: int = 400,
     ):
         self.code = code
@@ -65,7 +65,7 @@ class ConflictException(MaanCameraException):
 
 
 class BusinessRuleViolationException(MaanCameraException):
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str, details: dict[str, Any] | None = None):
         super().__init__(
             code="BUSINESS_RULE_VIOLATION",
             message=message,
@@ -75,7 +75,7 @@ class BusinessRuleViolationException(MaanCameraException):
 
 
 class ValidationException(MaanCameraException):
-    def __init__(self, message: str = "Validation failed", details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str = "Validation failed", details: dict[str, Any] | None = None):
         super().__init__(
             code="VALIDATION_ERROR",
             message=message,

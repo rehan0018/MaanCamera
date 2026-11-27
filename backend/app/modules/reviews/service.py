@@ -1,14 +1,15 @@
 """Review service with verified booking requirement and rating aggregation."""
 
 import uuid
-from typing import List
-from sqlalchemy import select, func, desc
+
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.modules.reviews.models import Review, ContentReport
-from app.modules.reviews.schemas import ReviewCreateRequest, ContentReportRequest
+
+from app.core.exceptions import BusinessRuleViolationException, NotFoundException
 from app.modules.bookings.models import Booking
 from app.modules.professionals.models import ProfessionalProfile
-from app.core.exceptions import NotFoundException, BusinessRuleViolationException
+from app.modules.reviews.models import ContentReport, Review
+from app.modules.reviews.schemas import ContentReportRequest, ReviewCreateRequest
 
 
 class ReviewService:
@@ -84,7 +85,7 @@ class ReviewService:
         db: AsyncSession,
         professional_id: uuid.UUID,
         limit: int = 50,
-    ) -> List[Review]:
+    ) -> list[Review]:
         stmt = select(Review).where(
             Review.professional_id == professional_id,
             Review.moderation_status == "approved",

@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend-lint-and-test:
-    name: Backend Lint & Typecheck
+    name: Backend Lint, Typecheck & Postgres Tests
     runs-on: ubuntu-latest
 
     services:
@@ -21,15 +21,31 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U maancamera -d maancamera_db"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
 
       valkey:
-        image: valkey/valkey:7.2-alpine
+        image: valkey/valkey:7.2.6-alpine
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      ENVIRONMENT: test
+      SECRET_KEY: ci-test-secret-key-must-be-at-least-thirty-two-bytes-long
+      CSRF_SECRET: ci-test-csrf-secret-key-must-be-at-least-thirty-two-bytes
+      DATABASE_URL: postgresql+asyncpg://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      SYNC_DATABASE_URL: postgresql+psycopg2://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      TEST_DATABASE_URL: postgresql+asyncpg://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      REDIS_URL: redis://localhost:6379/0
+      RATE_LIMIT_STORAGE_URI: redis://localhost:6379/0
+      PAYMENT_PROVIDER: mock
 
     steps:
       - name: Checkout Code
@@ -39,49 +55,68 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Install Dependencies
-        run: |
-          cd backend
-          python -m pip install --upgrade pip
-          pip install ruff mypy pytest httpx
-          pip install .
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
 
-      - name: Code Quality & Linting
-        run: |
-          cd backend
-          ruff check .
+      - name: Install Locked Dependencies
+        working-directory: backend
+        run: uv sync --frozen --extra dev
 
-      - name: Verify Database Schema
+      - name: Smoke Boot & OpenAPI Schema Check
+        working-directory: backend
+        run: uv run python -c "from app.main import app; spec = app.openapi(); assert len(spec['paths']) > 0; print('OpenAPI paths:', len(spec['paths']))"
+
+      - name: Code Quality & Linting (Ruff)
+        working-directory: backend
+        run: uv run ruff check .
+
+      - name: Static Typechecking (Mypy)
+        working-directory: backend
+        run: uv run mypy app
+
+      - name: Apply Alembic Migrations, Check Schema Drift & Run Seed
+        working-directory: backend
         run: |
-          PGPASSWORD=maancamera_local_dev_password psql -h localhost -U maancamera -d maancamera_db -f database/schema.sql
-          PGPASSWORD=maancamera_local_dev_password psql -h localhost -U maancamera -d maancamera_db -f database/seed.sql
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run python -m app.db.seed
+
+      - name: Run Pytest Suite Against PostgreSQL & Valkey
+        working-directory: backend
+        run: uv run pytest -q
 
   frontend-build:
-    name: Frontend Build & Typecheck
+    name: Frontend Typecheck & Production Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: "frontend/pnpm-lock.yaml"
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 8
+      - name: Install Locked Dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
 
-      - name: Install Dependencies
-        run: |
-          cd frontend
-          pnpm install
+      - name: TypeScript Typecheck
+        working-directory: frontend
+        run: pnpm run typecheck
 
-      - name: Run Build
-        run: |
-          cd frontend
-          pnpm run build
+      - name: Production Build
+        working-directory: frontend
+        run: pnpm run build

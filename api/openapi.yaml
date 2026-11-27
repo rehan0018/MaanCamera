@@ -1,579 +1,1739 @@
 openapi: 3.1.0
 info:
   title: MaanCamera API
+  description: India's AI-Powered Marketplace & Business SaaS for Photography & Videography
+    Professionals
   version: 1.0.0
-  description: >
-    Production REST API for MaanCamera — India's AI-Powered Marketplace & SaaS
-    for Photography & Videography Professionals.
-servers:
-  - url: http://localhost:8000/api/v1
-    description: Local Development Server
-  - url: https://api.maancamera.com/api/v1
-    description: Production Server
-
-components:
-  securitySchemes:
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: mc_session
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  schemas:
-    MetaResponse:
-      type: object
-      properties:
-        request_id:
+paths:
+  /health:
+    get:
+      tags:
+      - System
+      summary: Health Check
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /ready:
+    get:
+      tags:
+      - System
+      summary: Readiness Check
+      operationId: readiness_check_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/csrf:
+    get:
+      tags:
+      - Authentication & Users
+      summary: Get Csrf Token
+      description: Issue a signed CSRF double-submit cookie for browser sessions.
+      operationId: get_csrf_token_api_v1_auth_csrf_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/register:
+    post:
+      tags:
+      - Authentication & Users
+      summary: Register
+      operationId: register_api_v1_auth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegisterRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Authentication & Users
+      summary: Login
+      operationId: login_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/logout:
+    post:
+      tags:
+      - Authentication & Users
+      summary: Logout
+      operationId: logout_api_v1_auth_logout_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/users/me:
+    get:
+      tags:
+      - Authentication & Users
+      summary: Get Me
+      operationId: get_me_api_v1_users_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/categories:
+    get:
+      tags:
+      - Professionals & Marketplace
+      summary: Get Categories
+      operationId: get_categories_api_v1_categories_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/professionals/me:
+    get:
+      tags:
+      - Professionals & Marketplace
+      summary: Get My Profile
+      operationId: get_my_profile_api_v1_professionals_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+    patch:
+      tags:
+      - Professionals & Marketplace
+      summary: Update My Profile
+      operationId: update_my_profile_api_v1_professionals_me_patch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/professionals/me/services:
+    post:
+      tags:
+      - Professionals & Marketplace
+      summary: Create My Service
+      operationId: create_my_service_api_v1_professionals_me_services_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/professionals/{id}:
+    get:
+      tags:
+      - Professionals & Marketplace
+      summary: Get Professional
+      operationId: get_professional_api_v1_professionals__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Professionals & Marketplace
+      summary: Update Professional Profile
+      operationId: update_professional_profile_api_v1_professionals__id__patch
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
           type: string
           format: uuid
-        timestamp:
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Professionals & Marketplace
+      summary: Delete Professional Profile
+      operationId: delete_professional_profile_api_v1_professionals__id__delete
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
           type: string
-          format: date-time
-
-    ErrorDetail:
-      type: object
-      properties:
-        code:
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/professionals:
+    post:
+      tags:
+      - Professionals & Marketplace
+      summary: Create Professional Profile
+      operationId: create_professional_profile_api_v1_professionals_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/portfolios/{portfolio_id}/projects:
+    get:
+      tags:
+      - Portfolios & Media
+      summary: Get Projects
+      operationId: get_projects_api_v1_portfolios__portfolio_id__projects_get
+      parameters:
+      - name: portfolio_id
+        in: path
+        required: true
+        schema:
           type: string
-        message:
+          format: uuid
+          title: Portfolio Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/projects/{project_id}:
+    get:
+      tags:
+      - Portfolios & Media
+      summary: Get Project
+      operationId: get_project_api_v1_projects__project_id__get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
           type: string
-        details:
-          type: object
-
-    BaseErrorResponse:
-      type: object
-      required: [success, error, meta]
-      properties:
-        success:
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/projects:
+    post:
+      tags:
+      - Portfolios & Media
+      summary: Create Project
+      operationId: create_project_api_v1_projects_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/upload-url:
+    post:
+      tags:
+      - Portfolios & Media
+      summary: Generate Upload Url
+      operationId: generate_upload_url_api_v1_media_upload_url_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/complete:
+    post:
+      tags:
+      - Portfolios & Media
+      summary: Complete Upload
+      operationId: complete_upload_api_v1_media_complete_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteMediaUploadRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/search/professionals:
+    get:
+      tags:
+      - Search & Comparison
+      summary: Search Professionals
+      operationId: search_professionals_api_v1_search_professionals_get
+      parameters:
+      - name: category_slug
+        in: query
+        required: false
+        schema:
+          type: string
+          description: Category filter (e.g. wedding-photography)
+          title: Category Slug
+        description: Category filter (e.g. wedding-photography)
+      - name: city
+        in: query
+        required: false
+        schema:
+          type: string
+          description: City name (e.g. Pune, Mumbai)
+          title: City
+        description: City name (e.g. Pune, Mumbai)
+      - name: verified_only
+        in: query
+        required: false
+        schema:
           type: boolean
-          example: false
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
-        meta:
-          $ref: '#/components/schemas/MetaResponse'
-
-    User:
-      type: object
-      properties:
-        id:
+          description: Filter only verified profiles
+          default: false
+          title: Verified Only
+        description: Filter only verified profiles
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/search/compare:
+    post:
+      tags:
+      - Search & Comparison
+      summary: Compare Professionals
+      operationId: compare_professionals_api_v1_search_compare_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompareRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/enquiries:
+    post:
+      tags:
+      - Enquiries
+      summary: Create Enquiry
+      operationId: create_enquiry_api_v1_enquiries_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnquiryCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/enquiries/me:
+    get:
+      tags:
+      - Enquiries
+      summary: Get My Enquiries
+      operationId: get_my_enquiries_api_v1_enquiries_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/enquiries/{id}:
+    get:
+      tags:
+      - Enquiries
+      summary: Get Enquiry
+      operationId: get_enquiry_api_v1_enquiries__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
           type: string
           format: uuid
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-        full_name:
-          type: string
-        avatar_url:
-          type: string
-        status:
-          type: string
-          enum: [active, suspended, pending_verification, deactivated]
-        created_at:
-          type: string
-          format: date-time
-
-    ProfessionalProfile:
-      type: object
-      properties:
-        id:
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/quotations:
+    post:
+      tags:
+      - Quotations
+      summary: Create Quotation
+      operationId: create_quotation_api_v1_quotations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuotationCreateRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/quotations/{id}/revisions:
+    post:
+      tags:
+      - Quotations
+      summary: Revise Quotation
+      operationId: revise_quotation_api_v1_quotations__id__revisions_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
           type: string
           format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuotationRevisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/quotations/{id}/accept:
+    post:
+      tags:
+      - Quotations
+      summary: Accept Quotation
+      operationId: accept_quotation_api_v1_quotations__id__accept_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/bookings/me:
+    get:
+      tags:
+      - Bookings
+      summary: Get My Bookings
+      operationId: get_my_bookings_api_v1_bookings_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/bookings/{id}:
+    get:
+      tags:
+      - Bookings
+      summary: Get Booking
+      operationId: get_booking_api_v1_bookings__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/bookings/{id}/status:
+    patch:
+      tags:
+      - Bookings
+      summary: Update Booking Status
+      operationId: update_booking_status_api_v1_bookings__id__status_patch
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingStatusUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/bookings/{id}/complete:
+    post:
+      tags:
+      - Bookings
+      summary: Complete Booking
+      operationId: complete_booking_api_v1_bookings__id__complete_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/bookings/{id}/cancel:
+    post:
+      tags:
+      - Bookings
+      summary: Cancel Booking
+      operationId: cancel_booking_api_v1_bookings__id__cancel_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCancelRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/create-order:
+    post:
+      tags:
+      - Payments
+      summary: Create Payment Order
+      operationId: create_payment_order_api_v1_payments_create_order_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentOrderRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/verify:
+    post:
+      tags:
+      - Payments
+      summary: Verify Payment
+      operationId: verify_payment_api_v1_payments_verify_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPaymentRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/webhooks/{provider}:
+    post:
+      tags:
+      - Payments
+      summary: Payment Webhook
+      operationId: payment_webhook_api_v1_payments_webhooks__provider__post
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/bookings/{id}/review:
+    post:
+      tags:
+      - Reviews
+      summary: Submit Booking Review
+      operationId: submit_booking_review_api_v1_bookings__id__review_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/professionals/{id}/reviews:
+    get:
+      tags:
+      - Reviews
+      summary: Get Professional Reviews
+      operationId: get_professional_reviews_api_v1_professionals__id__reviews_get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reviews/{id}/report:
+    post:
+      tags:
+      - Reviews
+      summary: Report Review
+      operationId: report_review_api_v1_reviews__id__report_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentReportRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/search/ai:
+    post:
+      tags:
+      - AI Intelligence
+      summary: Natural Language Search
+      operationId: natural_language_search_api_v1_search_ai_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaturalLanguageSearchRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai/recommendations:
+    post:
+      tags:
+      - AI Intelligence
+      summary: Get Recommendations
+      operationId: get_recommendations_api_v1_ai_recommendations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaturalLanguageSearchRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai/portfolio/analyze:
+    post:
+      tags:
+      - AI Intelligence
+      summary: Analyze Portfolio
+      operationId: analyze_portfolio_api_v1_ai_portfolio_analyze_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortfolioAnalysisRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/ai/reviews/summarize:
+    post:
+      tags:
+      - AI Intelligence
+      summary: Summarize Reviews
+      operationId: summarize_reviews_api_v1_ai_reviews_summarize_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewSummaryRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    BookingCancelRequest:
+      properties:
+        cancellation_reason:
+          type: string
+          maxLength: 1000
+          minLength: 5
+          title: Cancellation Reason
+      type: object
+      required:
+      - cancellation_reason
+      title: BookingCancelRequest
+    BookingStatusUpdate:
+      properties:
+        booking_status:
+          type: string
+          pattern: ^(pending_payment|confirmed|in_progress|completed|cancelled|disputed)$
+          title: Booking Status
+      type: object
+      required:
+      - booking_status
+      title: BookingStatusUpdate
+    CompareRequest:
+      properties:
+        professional_ids:
+          items:
+            type: string
+            format: uuid
+          type: array
+          maxItems: 4
+          minItems: 2
+          title: Professional Ids
+      type: object
+      required:
+      - professional_ids
+      title: CompareRequest
+    CompleteMediaUploadRequest:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        storage_key:
+          type: string
+          maxLength: 500
+          minLength: 5
+          title: Storage Key
+        media_type:
+          type: string
+          pattern: ^image$
+          title: Media Type
+          default: image
+        mime_type:
+          type: string
+          pattern: ^image/(jpeg|png|webp)$
+          title: Mime Type
+        file_size_bytes:
+          type: integer
+          maximum: 15728640.0
+          exclusiveMinimum: 0.0
+          title: File Size Bytes
+        checksum:
+          type: string
+          maxLength: 64
+          minLength: 16
+          title: Checksum
+        width:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Width
+        height:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Height
+      type: object
+      required:
+      - project_id
+      - storage_key
+      - mime_type
+      - file_size_bytes
+      - checksum
+      title: CompleteMediaUploadRequest
+    ContentReportRequest:
+      properties:
+        reason:
+          type: string
+          maxLength: 100
+          minLength: 3
+          title: Reason
+        details:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Details
+      type: object
+      required:
+      - reason
+      title: ContentReportRequest
+    CreatePaymentOrderRequest:
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+          title: Booking Id
+        currency_code:
+          type: string
+          maxLength: 3
+          title: Currency Code
+          default: INR
+        payment_type:
+          type: string
+          pattern: ^(advance|balance|full)$
+          title: Payment Type
+          default: advance
+      type: object
+      required:
+      - booking_id
+      title: CreatePaymentOrderRequest
+    EnquiryCreateRequest:
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          title: Category Id
+        title:
+          type: string
+          maxLength: 250
+          title: Title
+        description:
+          type: string
+          title: Description
+        shoot_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Shoot Date
+        duration_days:
+          type: integer
+          minimum: 1.0
+          title: Duration Days
+          default: 1
+        location:
+          type: string
+          maxLength: 200
+          title: Location
+        city:
+          type: string
+          maxLength: 100
+          title: City
+        budget_min_minor:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Budget Min Minor
+        budget_max_minor:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Budget Max Minor
+        currency_code:
+          type: string
+          maxLength: 3
+          title: Currency Code
+          default: INR
+        professional_ids:
+          items:
+            type: string
+            format: uuid
+          type: array
+          minItems: 1
+          title: Professional Ids
+      type: object
+      required:
+      - category_id
+      - title
+      - description
+      - location
+      - city
+      - professional_ids
+      title: EnquiryCreateRequest
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    NaturalLanguageSearchRequest:
+      properties:
+        query:
+          type: string
+          maxLength: 1000
+          minLength: 3
+          title: Query
+      type: object
+      required:
+      - query
+      title: NaturalLanguageSearchRequest
+    PortfolioAnalysisRequest:
+      properties:
+        project_id:
+          type: string
+          format: uuid
+          title: Project Id
+        asset_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Asset Id
+        media_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Media Url
+      type: object
+      required:
+      - project_id
+      title: PortfolioAnalysisRequest
+    ProfileCreateRequest:
+      properties:
         display_name:
           type: string
-        slug:
-          type: string
+          maxLength: 200
+          minLength: 2
+          title: Display Name
         headline:
-          type: string
+          anyOf:
+          - type: string
+            maxLength: 250
+          - type: 'null'
+          title: Headline
         biography:
-          type: string
-        profile_image:
-          type: string
-        cover_image:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Biography
         professional_type:
           type: string
-          enum: [individual, team, studio, crew]
+          pattern: ^(individual|team|studio|crew)$
+          title: Professional Type
+          default: individual
         years_experience:
           type: integer
+          minimum: 0.0
+          title: Years Experience
+          default: 1
         base_city:
           type: string
+          maxLength: 100
+          minLength: 2
+          title: Base City
         state:
           type: string
-        country_code:
-          type: string
-          example: IN
+          maxLength: 100
+          minLength: 2
+          title: State
         service_radius_km:
           type: integer
+          minimum: 0.0
+          title: Service Radius Km
+          default: 50
         travel_available:
           type: boolean
-        verification_status:
-          type: string
-          enum: [unverified, pending, verified, rejected]
-        avg_rating:
-          type: number
-        total_reviews:
-          type: integer
-        completed_bookings_count:
-          type: integer
-
-    Project:
+          title: Travel Available
+          default: true
       type: object
+      required:
+      - display_name
+      - base_city
+      - state
+      title: ProfileCreateRequest
+    ProfileUpdateRequest:
       properties:
-        id:
-          type: string
-          format: uuid
+        display_name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 2
+          - type: 'null'
+          title: Display Name
+        headline:
+          anyOf:
+          - type: string
+            maxLength: 250
+          - type: 'null'
+          title: Headline
+        biography:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Biography
+        professional_type:
+          anyOf:
+          - type: string
+            pattern: ^(individual|team|studio|crew)$
+          - type: 'null'
+          title: Professional Type
+        years_experience:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Years Experience
+        base_city:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 2
+          - type: 'null'
+          title: Base City
+        state:
+          anyOf:
+          - type: string
+            maxLength: 100
+            minLength: 2
+          - type: 'null'
+          title: State
+        service_radius_km:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Service Radius Km
+        travel_available:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Travel Available
+        profile_visibility:
+          anyOf:
+          - type: string
+            pattern: ^(public|unlisted|private)$
+          - type: 'null'
+          title: Profile Visibility
+      type: object
+      title: ProfileUpdateRequest
+    ProjectCreateRequest:
+      properties:
         portfolio_id:
           type: string
           format: uuid
+          title: Portfolio Id
         category_id:
           type: string
           format: uuid
+          title: Category Id
         title:
           type: string
-        slug:
-          type: string
+          maxLength: 200
+          minLength: 2
+          title: Title
         style:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Style
         location:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location
         project_date:
-          type: string
-          format: date
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Project Date
         description:
-          type: string
-        cover_url:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
         tags:
-          type: array
           items:
             type: string
-
-    Enquiry:
+          type: array
+          title: Tags
+          default: []
       type: object
+      required:
+      - portfolio_id
+      - category_id
+      - title
+      title: ProjectCreateRequest
+    QuotationCreateRequest:
       properties:
-        id:
-          type: string
-          format: uuid
-        customer_id:
-          type: string
-          format: uuid
-        category_id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        description:
-          type: string
-        shoot_date:
-          type: string
-          format: date
-        duration_days:
-          type: integer
-        location:
-          type: string
-        city:
-          type: string
-        budget_min_minor:
-          type: integer
-        budget_max_minor:
-          type: integer
-        currency_code:
-          type: string
-          example: INR
-        status:
-          type: string
-          enum: [open, responded, booked, expired, cancelled]
-
-    Quotation:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
         enquiry_id:
           type: string
           format: uuid
+          title: Enquiry Id
         professional_id:
-          type: string
-          format: uuid
-        version_number:
-          type: integer
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Professional Id
         total_amount_minor:
           type: integer
-        advance_amount_minor:
-          type: integer
+          exclusiveMinimum: 0.0
+          title: Total Amount Minor
         currency_code:
           type: string
+          maxLength: 3
+          title: Currency Code
+          default: INR
+        advance_amount_minor:
+          type: integer
+          minimum: 0.0
+          title: Advance Amount Minor
+          default: 0
         scope_of_work:
           type: string
+          title: Scope Of Work
         deliverables:
-          type: array
-          items:
-            type: string
-        status:
-          type: string
-          enum: [draft, sent, revised, accepted, rejected, expired]
-
-    Booking:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Deliverables
+        terms:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Terms
+        valid_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Valid Until
       type: object
+      required:
+      - enquiry_id
+      - total_amount_minor
+      - scope_of_work
+      title: QuotationCreateRequest
+    QuotationRevisionRequest:
       properties:
-        id:
+        total_amount_minor:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Total Amount Minor
+        advance_amount_minor:
+          type: integer
+          minimum: 0.0
+          title: Advance Amount Minor
+          default: 0
+        scope_of_work:
           type: string
-          format: uuid
-        enquiry_id:
+          title: Scope Of Work
+        deliverables:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Deliverables
+        terms:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Terms
+        valid_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Valid Until
+      type: object
+      required:
+      - total_amount_minor
+      - scope_of_work
+      title: QuotationRevisionRequest
+    ReviewCreateRequest:
+      properties:
+        overall_rating:
+          type: number
+          maximum: 5.0
+          minimum: 1.0
+          title: Overall Rating
+        work_quality_rating:
+          type: number
+          maximum: 5.0
+          minimum: 1.0
+          title: Work Quality Rating
+        communication_rating:
+          type: number
+          maximum: 5.0
+          minimum: 1.0
+          title: Communication Rating
+        punctuality_rating:
+          type: number
+          maximum: 5.0
+          minimum: 1.0
+          title: Punctuality Rating
+        value_rating:
+          type: number
+          maximum: 5.0
+          minimum: 1.0
+          title: Value Rating
+        review_text:
           type: string
-          format: uuid
-        quotation_id:
-          type: string
-          format: uuid
-        customer_id:
-          type: string
-          format: uuid
+          maxLength: 2000
+          minLength: 10
+          title: Review Text
+      type: object
+      required:
+      - overall_rating
+      - work_quality_rating
+      - communication_rating
+      - punctuality_rating
+      - value_rating
+      - review_text
+      title: ReviewCreateRequest
+    ReviewSummaryRequest:
+      properties:
         professional_id:
           type: string
           format: uuid
-        shoot_date:
+          title: Professional Id
+      type: object
+      required:
+      - professional_id
+      title: ReviewSummaryRequest
+    ServiceCreateRequest:
+      properties:
+        category_id:
           type: string
-          format: date
-        location:
+          format: uuid
+          title: Category Id
+        name:
           type: string
-        agreed_amount_minor:
+          maxLength: 200
+          minLength: 2
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        pricing_type:
+          type: string
+          pattern: ^(fixed|starting_from|hourly|daily|custom_quote)$
+          title: Pricing Type
+          default: starting_from
+        starting_price_minor:
           type: integer
-        paid_amount_minor:
-          type: integer
+          minimum: 0.0
+          title: Starting Price Minor
+          default: 0
         currency_code:
           type: string
-        booking_status:
+          maxLength: 3
+          title: Currency Code
+          default: INR
+      type: object
+      required:
+      - category_id
+      - name
+      title: ServiceCreateRequest
+    UploadUrlRequest:
+      properties:
+        filename:
           type: string
-          enum: [pending_payment, confirmed, in_progress, completed, cancelled, disputed]
-        completion_status:
+          maxLength: 255
+          minLength: 1
+          title: Filename
+        mime_type:
           type: string
-          enum: [pending, delivered, customer_accepted]
-
-paths:
-  /auth/register:
-    post:
-      summary: Register customer or professional user
-      tags: [Authentication]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [full_name, email, password]
-              properties:
-                full_name: { type: string }
-                email: { type: string, format: email }
-                phone: { type: string }
-                password: { type: string, minLength: 8 }
-      responses:
-        '201':
-          description: User registered successfully
-        '400':
-          $ref: '#/components/responses/StandardError'
-
-  /auth/login:
-    post:
-      summary: Authenticate user & issue session cookie
-      tags: [Authentication]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string }
-                password: { type: string }
-      responses:
-        '200':
-          description: Session created successfully
-        '401':
-          $ref: '#/components/responses/StandardError'
-
-  /auth/logout:
-    post:
-      summary: Revoke session and clear session cookie
-      tags: [Authentication]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200':
-          description: Logged out successfully
-
-  /users/me:
-    get:
-      summary: Retrieve currently authenticated user profile
-      tags: [Users]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200':
-          description: Current user details
-    patch:
-      summary: Update current user account
-      tags: [Users]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200':
-          description: Profile updated
-
-  /professionals:
-    post:
-      summary: Create professional profile
-      tags: [Professionals]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '201':
-          description: Profile created
-
-  /professionals/{id}:
-    get:
-      summary: Get professional profile by ID or slug
-      tags: [Professionals]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Professional profile details
-    patch:
-      summary: Update professional profile
-      tags: [Professionals]
-      security: [{ cookieAuth: [] }]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: Updated profile
-
-  /search/professionals:
-    get:
-      summary: Structured discovery filter for professionals
-      tags: [Discovery & Search]
-      parameters:
-        - name: category
-          in: query
-          schema: { type: string }
-        - name: city
-          in: query
-          schema: { type: string }
-        - name: budget_min
-          in: query
-          schema: { type: integer }
-        - name: budget_max
-          in: query
-          schema: { type: integer }
-        - name: style
-          in: query
-          schema: { type: string }
-        - name: verified_only
-          in: query
-          schema: { type: boolean, default: false }
-        - name: page
-          in: query
-          schema: { type: integer, default: 1 }
-        - name: limit
-          in: query
-          schema: { type: integer, default: 20 }
-      responses:
-        '200':
-          description: Matching professional profiles
-
-  /search/ai:
-    post:
-      summary: Natural-language requirement search
-      description: Parses conversational prompt (e.g. 'candid wedding photographer in Pune under 50k') into structured criteria
-      tags: [AI Subsystem]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [query]
-              properties:
-                query:
-                  type: string
-                  example: "I need a candid wedding photographer in Pune for two days, budget around Rs 50,000, with cinematic video."
-      responses:
-        '200':
-          description: Parsed requirements and candidate recommendations
-
-  /search/compare:
-    post:
-      summary: Side-by-side comparison of up to 4 professionals
-      tags: [Discovery & Search]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [professional_ids]
-              properties:
-                professional_ids:
-                  type: array
-                  maxItems: 4
-                  items:
-                    type: string
-                    format: uuid
-      responses:
-        '200':
-          description: Comparison matrix
-
-  /media/upload-url:
-    post:
-      summary: Generate presigned upload URL for SeaweedFS S3 storage
-      tags: [Media & Portfolios]
-      security: [{ cookieAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [filename, mime_type, file_size_bytes]
-              properties:
-                filename: { type: string }
-                mime_type: { type: string }
-                file_size_bytes: { type: integer }
-      responses:
-        '200':
-          description: Presigned upload URL and temporary storage key
-
-  /media/complete:
-    post:
-      summary: Confirm media upload completion and enqueue async processing
-      tags: [Media & Portfolios]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200':
-          description: Upload confirmed and processing queued
-
-  /enquiries:
-    post:
-      summary: Submit customer requirement enquiry
-      tags: [Enquiries & Bookings]
-      security: [{ cookieAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [category_id, title, description, shoot_date, location, city]
-              properties:
-                category_id: { type: string, format: uuid }
-                title: { type: string }
-                description: { type: string }
-                shoot_date: { type: string, format: date }
-                duration_days: { type: integer, default: 1 }
-                location: { type: string }
-                city: { type: string }
-                budget_max_minor: { type: integer }
-                target_professional_ids:
-                  type: array
-                  items: { type: string, format: uuid }
-      responses:
-        '201':
-          description: Enquiry created and dispatched
-
-  /quotations:
-    post:
-      summary: Create professional quotation
-      tags: [Enquiries & Bookings]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '201':
-          description: Quotation sent
-
-  /quotations/{id}/accept:
-    post:
-      summary: Customer accepts quotation to create confirmed booking
-      tags: [Enquiries & Bookings]
-      security: [{ cookieAuth: [] }]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: Quotation accepted and booking created
-
-  /payments/create-order:
-    post:
-      summary: Create payment order (gateway adapter)
-      tags: [Payments]
-      security: [{ cookieAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [booking_id, payment_type]
-              properties:
-                booking_id: { type: string, format: uuid }
-                payment_type:
-                  type: string
-                  enum: [advance, balance, full]
-      responses:
-        '200':
-          description: Payment order initialized
-
-  /payments/verify:
-    post:
-      summary: Server-side cryptographic payment verification
-      tags: [Payments]
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200':
-          description: Payment verified and booking status updated
-
-  /bookings/{id}/review:
-    post:
-      summary: Submit verified customer review on completed booking
-      tags: [Reviews]
-      security: [{ cookieAuth: [] }]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [overall_rating, work_quality_rating, communication_rating, punctuality_rating, value_rating, review_text]
-              properties:
-                overall_rating: { type: number, minimum: 1, maximum: 5 }
-                work_quality_rating: { type: number, minimum: 1, maximum: 5 }
-                communication_rating: { type: number, minimum: 1, maximum: 5 }
-                punctuality_rating: { type: number, minimum: 1, maximum: 5 }
-                value_rating: { type: number, minimum: 1, maximum: 5 }
-                review_text: { type: string, minLength: 10 }
-      responses:
-        '201':
-          description: Review submitted
-
-responses:
-  StandardError:
-    description: Standardized error envelope
-    content:
-      application/json:
-        schema:
-          $ref: '#/components/schemas/BaseErrorResponse'
+          pattern: ^image/(jpeg|png|webp)$
+          title: Mime Type
+        file_size_bytes:
+          type: integer
+          maximum: 15728640.0
+          exclusiveMinimum: 0.0
+          title: File Size Bytes
+        is_public:
+          type: boolean
+          title: Is Public
+          default: true
+      type: object
+      required:
+      - filename
+      - mime_type
+      - file_size_bytes
+      title: UploadUrlRequest
+    UserLoginRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - password
+      title: UserLoginRequest
+    UserRegisterRequest:
+      properties:
+        full_name:
+          type: string
+          maxLength: 150
+          minLength: 2
+          title: Full Name
+        email:
+          type: string
+          format: email
+          title: Email
+        password:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Password
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+        role:
+          type: string
+          pattern: ^(customer|professional)$
+          title: Role
+          default: customer
+      type: object
+      required:
+      - full_name
+      - email
+      - password
+      title: UserRegisterRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VerifyPaymentRequest:
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+          title: Payment Id
+        provider_payment_id:
+          type: string
+          title: Provider Payment Id
+        provider_signature:
+          type: string
+          maxLength: 256
+          minLength: 16
+          title: Provider Signature
+        amount_minor:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Amount Minor
+      type: object
+      required:
+      - payment_id
+      - provider_payment_id
+      - provider_signature
+      title: VerifyPaymentRequest
+servers:
+- url: http://localhost:8000
+  description: Local Development Server
+- url: https://api.maancamera.com
+  description: Production Server

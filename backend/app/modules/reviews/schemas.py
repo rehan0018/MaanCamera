@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -35,4 +35,4 @@ class ReviewResponse(BaseModel):
 
 class ContentReportRequest(BaseModel):
     reason: str = Field(..., min_length=3, max_length=100)
-    details: Optional[str] = Field(None, max_length=1000)
+    details: str | None = Field(None, max_length=1000)

@@ -1,13 +1,14 @@
 """Booking business logic and transition state machine."""
 
 import uuid
-from typing import List, Optional
-from sqlalchemy import select, desc
+
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import BusinessRuleViolationException, ForbiddenException, NotFoundException
 from app.modules.bookings.models import Booking
-from app.modules.professionals.models import ProfessionalProfile
 from app.modules.identity.models import User
-from app.core.exceptions import NotFoundException, BusinessRuleViolationException, ForbiddenException
+from app.modules.professionals.models import ProfessionalProfile
 
 # Valid state machine transitions
 ALLOWED_TRANSITIONS = {
@@ -23,7 +24,7 @@ ALLOWED_TRANSITIONS = {
 class BookingService:
     @staticmethod
     async def get_booking_by_id(
-        db: AsyncSession, booking_id: uuid.UUID, current_user: Optional[User] = None
+        db: AsyncSession, booking_id: uuid.UUID, current_user: User | None = None
     ) -> Booking:
         stmt = select(Booking).where(Booking.id == booking_id)
         res = await db.execute(stmt)
@@ -31,25 +32,24 @@ class BookingService:
         if not booking:
             raise NotFoundException("Booking", booking_id)
 
-        if current_user:
-            if current_user.role != "admin" and booking.customer_id != current_user.id:
-                # Check if current_user owns the professional profile
-                prof_stmt = select(ProfessionalProfile).where(
-                    ProfessionalProfile.id == booking.professional_id,
-                    ProfessionalProfile.user_id == current_user.id,
-                )
-                prof_res = await db.execute(prof_stmt)
-                if not prof_res.scalar_one_or_none():
-                    raise ForbiddenException("You do not have permission to view this booking.")
+        if current_user and current_user.role != "admin" and booking.customer_id != current_user.id:
+            # Check if current_user owns the professional profile
+            prof_stmt = select(ProfessionalProfile).where(
+                ProfessionalProfile.id == booking.professional_id,
+                ProfessionalProfile.owner_user_id == current_user.id,
+            )
+            prof_res = await db.execute(prof_stmt)
+            if not prof_res.scalar_one_or_none():
+                raise ForbiddenException("You do not have permission to view this booking.")
 
         return booking
 
     @staticmethod
-    async def list_user_bookings(db: AsyncSession, user: User) -> List[Booking]:
+    async def list_user_bookings(db: AsyncSession, user: User) -> list[Booking]:
         if user.role == "admin":
             stmt = select(Booking).order_by(desc(Booking.created_at))
         elif user.role == "professional":
-            prof_stmt = select(ProfessionalProfile.id).where(ProfessionalProfile.user_id == user.id)
+            prof_stmt = select(ProfessionalProfile.id).where(ProfessionalProfile.owner_user_id == user.id)
             prof_res = await db.execute(prof_stmt)
             prof_ids = list(prof_res.scalars().all())
             stmt = select(Booking).where(

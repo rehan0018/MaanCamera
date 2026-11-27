@@ -1,18 +1,24 @@
-"""End-to-End Marketplace Flow Tests: Enquiry -> Quotation -> Booking -> Payment -> Review."""
+"""End-to-End Marketplace Flow Tests: Search -> Enquiry -> Quotation -> Booking -> Payment -> Review -> AI."""
 
+import hashlib
+import hmac
+import json
 import uuid
+
 import pytest
 from httpx import AsyncClient
+
+from app.core.config import settings
+from app.modules.payments.service import compute_mock_signature
+from tests.conftest import csrf_headers
 
 
 @pytest.mark.asyncio
 async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
-    customer = seed_users["customer"]
-    prof_user = seed_users["professional_user"]
     prof_profile = seed_users["professional_profile"]
     category = seed_users["category"]
 
-    # 1. Search professionals
+    # 1. Search professionals with style filter (exercises biography column)
     search_res = await client.get("/search/professionals?city=Pune")
     assert search_res.status_code == 200
     search_data = search_res.json()["data"]
@@ -20,7 +26,11 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     assert any(p["id"] == str(prof_profile.id) for p in search_data["results"])
 
     # 2. Login as Customer & Post Enquiry
-    await client.post("/auth/login", json={"email": "customer@example.com", "password": "CustomerPass@2026!"})
+    await client.post(
+        "/auth/login",
+        json={"email": "customer@example.com", "password": "CustomerPass@2026!"},
+        headers=csrf_headers(client),
+    )
 
     enquiry_payload = {
         "category_id": str(category.id),
@@ -34,32 +44,43 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
         "currency_code": "INR",
         "professional_ids": [str(prof_profile.id)],
     }
-    enquiry_res = await client.post("/enquiries", json=enquiry_payload)
+    enquiry_res = await client.post("/enquiries", json=enquiry_payload, headers=csrf_headers(client))
     assert enquiry_res.status_code == 201
     enquiry_id = enquiry_res.json()["data"]["id"]
 
-    # 3. Login as Professional & Send Quotation
-    await client.post("/auth/login", json={"email": "pro@example.com", "password": "ProPass@2026!"})
+    # 3. Login as Professional, check enquiries & Send Quotation (exercises owner_user_id)
+    await client.post(
+        "/auth/login",
+        json={"email": "pro@example.com", "password": "ProPass@2026!"},
+        headers=csrf_headers(client),
+    )
+    pro_enq_res = await client.get("/enquiries/me")
+    assert pro_enq_res.status_code == 200
+    assert any(e["id"] == enquiry_id for e in pro_enq_res.json()["data"])
 
     quotation_payload = {
         "enquiry_id": enquiry_id,
-        "total_amount_minor": 5000000,  # 50,000 INR
-        "advance_amount_minor": 1500000, # 15,000 INR deposit
+        "total_amount_minor": 5000000,
+        "advance_amount_minor": 1500000,
         "currency_code": "INR",
         "scope_of_work": "Comprehensive 2-day candid coverage, drone coverage, and cinematic highlights reel.",
         "deliverables": ["350 edited candid photographs", "3-5 minute 4K cinematic highlight teaser"],
         "terms": "50% raw files preview in 7 days, final edits within 30 days.",
     }
-    quote_res = await client.post("/quotations", json=quotation_payload)
+    quote_res = await client.post("/quotations", json=quotation_payload, headers=csrf_headers(client))
     assert quote_res.status_code == 201
     quote_data = quote_res.json()["data"]
     quotation_id = quote_data["id"]
     assert quote_data["status"] == "sent"
 
     # 4. Login as Customer & Accept Quotation -> Creates Booking
-    await client.post("/auth/login", json={"email": "customer@example.com", "password": "CustomerPass@2026!"})
+    await client.post(
+        "/auth/login",
+        json={"email": "customer@example.com", "password": "CustomerPass@2026!"},
+        headers=csrf_headers(client),
+    )
 
-    accept_res = await client.post(f"/quotations/{quotation_id}/accept")
+    accept_res = await client.post(f"/quotations/{quotation_id}/accept", headers=csrf_headers(client))
     assert accept_res.status_code == 200
     booking_data = accept_res.json()["data"]["booking"]
     booking_id = booking_data["id"]
@@ -71,21 +92,61 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
         "booking_id": booking_id,
         "payment_type": "advance",
     }
-    order_res = await client.post("/payments/create-order", json=order_payload)
+    order_res = await client.post("/payments/create-order", json=order_payload, headers=csrf_headers(client))
     assert order_res.status_code == 201
     order_data = order_res.json()["data"]
     payment_id = order_data["payment_id"]
-    assert order_data["amount_minor"] == 1500000  # Server calculated advance amount
+    provider_order_id = order_data["provider_order_id"]
+    assert order_data["amount_minor"] == 1500000
 
-    # 6. Verify Payment -> Transitions Booking to Confirmed
-    verify_payload = {
-        "payment_id": payment_id,
-        "provider_payment_id": f"pay_{uuid.uuid4().hex[:12]}",
-        "provider_signature": "mock_valid_signature",
-    }
-    verify_res = await client.post("/payments/verify", json=verify_payload)
+    # 6. Verify Payment -> Rejects forged signature, accepts valid HMAC signature
+    provider_payment_id = f"pay_{uuid.uuid4().hex[:12]}"
+    bad_verify = await client.post(
+        "/payments/verify",
+        json={
+            "payment_id": payment_id,
+            "provider_payment_id": provider_payment_id,
+            "provider_signature": "forged_signature_must_fail_closed",
+        },
+        headers=csrf_headers(client),
+    )
+    assert bad_verify.status_code == 400
+
+    valid_sig = compute_mock_signature(provider_order_id, provider_payment_id)
+    verify_res = await client.post(
+        "/payments/verify",
+        json={
+            "payment_id": payment_id,
+            "provider_payment_id": provider_payment_id,
+            "provider_signature": valid_sig,
+        },
+        headers=csrf_headers(client),
+    )
     assert verify_res.status_code == 200
     assert verify_res.json()["data"]["payment_status"] == "captured"
+
+    # Also test idempotent webhook delivery with valid signature
+    webhook_body = json.dumps({
+        "id": f"evt_{uuid.uuid4().hex[:10]}",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": provider_payment_id,
+                    "order_id": provider_order_id,
+                    "amount": 1500000,
+                    "currency": "INR",
+                    "status": "captured",
+                }
+            }
+        },
+    })
+    wh_sig = hmac.new(settings.SECRET_KEY.encode("utf-8"), webhook_body.encode("utf-8"), hashlib.sha256).hexdigest()
+    wh_res = await client.post(
+        "/payments/webhooks/mock",
+        content=webhook_body,
+        headers={"X-Mock-Signature": wh_sig, "Content-Type": "application/json"},
+    )
+    assert wh_res.status_code == 200
 
     # Check booking is confirmed
     b_check = await client.get(f"/bookings/{booking_id}")
@@ -93,12 +154,15 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     assert b_check.json()["data"]["booking_status"] == "confirmed"
 
     # 7. Update to in_progress & Complete Booking
-    patch_res = await client.patch(f"/bookings/{booking_id}/status", json={"booking_status": "in_progress"})
+    patch_res = await client.patch(
+        f"/bookings/{booking_id}/status",
+        json={"booking_status": "in_progress"},
+        headers=csrf_headers(client),
+    )
     assert patch_res.status_code == 200
     assert patch_res.json()["data"]["booking_status"] == "in_progress"
 
-    # Customer marks booking complete
-    comp_res = await client.post(f"/bookings/{booking_id}/complete")
+    comp_res = await client.post(f"/bookings/{booking_id}/complete", headers=csrf_headers(client))
     assert comp_res.status_code == 200
     assert comp_res.json()["data"]["booking_status"] == "completed"
     assert comp_res.json()["data"]["completion_status"] == "customer_accepted"
@@ -112,13 +176,25 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
         "value_rating": 4.9,
         "review_text": "Remarkable visual quality and punctual arrival. The candid shots exceeded our expectations!",
     }
-    rev_res = await client.post(f"/bookings/{booking_id}/review", json=review_payload)
+    rev_res = await client.post(f"/bookings/{booking_id}/review", json=review_payload, headers=csrf_headers(client))
     assert rev_res.status_code == 201
     assert rev_res.json()["data"]["overall_rating"] == 5.0
 
-    # 9. AI Review Summary reflects actual review
-    sum_res = await client.post("/ai/reviews/summarize", json={"professional_id": str(prof_profile.id)})
+    # 9. AI Review Summary & AI Search
+    sum_res = await client.post(
+        "/ai/reviews/summarize",
+        json={"professional_id": str(prof_profile.id)},
+        headers=csrf_headers(client),
+    )
     assert sum_res.status_code == 200
     sum_data = sum_res.json()["data"]
     assert sum_data["total_reviews_analyzed"] >= 1
     assert len(sum_data["sentiment_highlights"]) >= 1
+
+    ai_res = await client.post(
+        "/search/ai",
+        json={"query": "Need candid wedding photographer in Pune under 50k"},
+        headers=csrf_headers(client),
+    )
+    assert ai_res.status_code == 200
+    assert ai_res.json()["data"]["total_matches"] >= 1

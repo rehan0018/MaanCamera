@@ -2,8 +2,10 @@
 
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import httpx
+
 from app.core.config import settings
 
 
@@ -11,17 +13,17 @@ class AIProvider(ABC):
     """Abstract interface for local/pluggable AI model execution."""
 
     @abstractmethod
-    async def generate_structured_output(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_structured_output(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Generate structured JSON conforming to a specific schema."""
         pass
 
     @abstractmethod
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text: str) -> list[float]:
         """Generate vector embedding for semantic search."""
         pass
 
     @abstractmethod
-    async def summarize_reviews(self, review_texts: List[str]) -> Dict[str, Any]:
+    async def summarize_reviews(self, review_texts: list[str]) -> dict[str, Any]:
         """Summarize verified reviews into sentiment themes and key highlights."""
         pass
 
@@ -35,7 +37,7 @@ class OllamaAIProvider(AIProvider):
         self.fallback_model = settings.OLLAMA_FALLBACK_MODEL
         self.timeout = settings.AI_TIMEOUT_SECONDS
 
-    async def generate_structured_output(self, prompt: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_structured_output(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         system_instruction = (
             "You are the MaanCamera Intelligent Requirement Parser. "
             "Extract structured search constraints from the user's inquiry into valid JSON strictly matching the provided schema. "
@@ -68,7 +70,7 @@ class OllamaAIProvider(AIProvider):
 
         return self._heuristic_fallback_extraction(prompt)
 
-    async def generate_embedding(self, text: str) -> List[float]:
+    async def generate_embedding(self, text: str) -> list[float]:
         """Generate 384/512-dim embedding via Ollama /embeddings endpoint."""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -82,7 +84,7 @@ class OllamaAIProvider(AIProvider):
             pass
         return [0.0] * 512
 
-    async def summarize_reviews(self, review_texts: List[str]) -> Dict[str, Any]:
+    async def summarize_reviews(self, review_texts: list[str]) -> dict[str, Any]:
         """Synthesize multiple customer reviews into positive aspects and constructive feedback."""
         if not review_texts:
             return {"summary": "No verified reviews available yet.", "highlights": []}
@@ -114,10 +116,10 @@ class OllamaAIProvider(AIProvider):
             "highlights": ["Punctual arrival", "Exceptional color grading", "Comfortable with families"],
         }
 
-    def _heuristic_fallback_extraction(self, prompt: str) -> Dict[str, Any]:
+    def _heuristic_fallback_extraction(self, prompt: str) -> dict[str, Any]:
         """High-reliability deterministic keyword parser for offline/fallback scenarios."""
         lower = prompt.lower()
-        extracted: Dict[str, Any] = {
+        extracted: dict[str, Any] = {
             "categories": [],
             "city": None,
             "style": [],

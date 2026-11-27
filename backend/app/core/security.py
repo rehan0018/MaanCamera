@@ -1,10 +1,13 @@
-"""Cryptographic and authentication utilities (Argon2id, Session Hashing)."""
+"""Cryptographic and authentication utilities (Argon2id, Session Hashing, Double-Submit CSRF)."""
 
 import hashlib
+import hmac
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+
 from app.core.config import settings
 
 # Argon2id password hasher context (OWASP recommended parameters)
@@ -25,8 +28,8 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against Argon2id hash."""
     try:
-        return ph.verify(hashed_password, plain_password)
-    except (VerifyMismatchError, Exception):
+        return bool(ph.verify(hashed_password, plain_password))
+    except VerifyMismatchError:
         return False
 
 
@@ -42,16 +45,32 @@ def hash_session_token(token: str) -> str:
 
 def calculate_session_expiry() -> datetime:
     """Calculate expiration timestamp for user session."""
-    return datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    return datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
 
 def generate_csrf_token() -> str:
-    """Generate high-entropy random CSRF token."""
-    return secrets.token_hex(32)
+    """Generate HMAC-signed double-submit CSRF token bound to CSRF_SECRET."""
+    nonce = secrets.token_hex(24)
+    sig = hmac.new(
+        settings.CSRF_SECRET.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{nonce}.{sig}"
 
 
-def verify_csrf_token(token: str, expected: str) -> bool:
-    """Safely verify CSRF token against expected value."""
-    if not token or not expected:
+def verify_csrf_token(token_from_cookie: str, token_from_header: str) -> bool:
+    """Constant-time double-submit comparison plus HMAC signature verification."""
+    if not token_from_cookie or not token_from_header:
         return False
-    return secrets.compare_digest(token, expected)
+    if not hmac.compare_digest(token_from_cookie, token_from_header):
+        return False
+    if "." not in token_from_cookie:
+        return False
+    nonce, provided_sig = token_from_cookie.split(".", 1)
+    expected_sig = hmac.new(
+        settings.CSRF_SECRET.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(provided_sig, expected_sig)

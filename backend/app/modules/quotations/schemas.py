@@ -2,29 +2,30 @@
 
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class QuotationCreateRequest(BaseModel):
     enquiry_id: uuid.UUID
-    professional_id: Optional[uuid.UUID] = None
+    professional_id: uuid.UUID | None = None
     total_amount_minor: int = Field(..., gt=0)
     currency_code: str = Field("INR", max_length=3)
     advance_amount_minor: int = Field(0, ge=0)
     scope_of_work: str
-    deliverables: Optional[Any] = None
-    terms: Optional[str] = None
-    valid_until: Optional[datetime] = None
+    deliverables: Any | None = None
+    terms: str | None = None
+    valid_until: datetime | None = None
 
 
 class QuotationRevisionRequest(BaseModel):
     total_amount_minor: int = Field(..., gt=0)
     advance_amount_minor: int = Field(0, ge=0)
     scope_of_work: str
-    deliverables: Optional[Any] = None
-    terms: Optional[str] = None
-    valid_until: Optional[datetime] = None
+    deliverables: Any | None = None
+    terms: str | None = None
+    valid_until: datetime | None = None
 
 
 class QuotationResponse(BaseModel):
@@ -36,9 +37,9 @@ class QuotationResponse(BaseModel):
     currency_code: str
     advance_amount_minor: int
     scope_of_work: str
-    deliverables: Optional[Any] = None
-    terms: Optional[str] = None
-    valid_until: Optional[datetime] = None
+    deliverables: Any | None = None
+    terms: str | None = None
+    valid_until: datetime | None = None
     status: str
     created_at: datetime
     updated_at: datetime

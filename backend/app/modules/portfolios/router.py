@@ -1,19 +1,20 @@
 """HTTP endpoints for Portfolio, Projects, and Media Uploads."""
 
 import uuid
-from typing import List
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
 from app.modules.portfolios.schemas import (
-    ProjectResponse,
-    ProjectCreateRequest,
-    UploadUrlRequest,
     CompleteMediaUploadRequest,
     MediaAssetResponse,
+    ProjectCreateRequest,
+    ProjectResponse,
+    UploadUrlRequest,
 )
 from app.modules.portfolios.service import PortfolioService
 
@@ -54,7 +55,7 @@ async def generate_upload_url(
     req: UploadUrlRequest,
     current_user: User = Depends(get_current_user),
 ):
-    url_res = await PortfolioService.generate_upload_url(req)
+    url_res = await PortfolioService.generate_upload_url(current_user, req)
     return success_response(data=url_res.model_dump(mode="json"))
 
 

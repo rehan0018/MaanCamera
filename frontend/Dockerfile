@@ -1,12 +1,13 @@
 # Multi-stage production build for MaanCamera Next.js frontend
 FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat && corepack enable
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json pnpm-lock.yaml ./
+RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install --frozen-lockfile
 
 FROM node:20-alpine AS builder
+RUN corepack enable
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -14,7 +15,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-RUN npm run build
+RUN COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -36,4 +37,4 @@ USER nextjs
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["./node_modules/.bin/next", "start"]

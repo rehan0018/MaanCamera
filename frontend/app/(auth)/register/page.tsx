@@ -30,6 +30,8 @@ export default function RegisterPage() {
         role,
       });
 
+      await api.login({ email, password });
+
       if (role === "professional") {
         router.push("/professional/dashboard");
       } else {

@@ -1,0 +1,184 @@
+# Production Docker Compose Configuration
+# Hardened: pinned image versions, no --reload, no published DB/cache ports, non-root users, healthchecks.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - maancamera_internal
+
+  valkey:
+    image: valkey/valkey:7.2.6-alpine
+    restart: always
+    volumes:
+      - valkey_prod_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - maancamera_internal
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.79
+    restart: always
+    command: "server -dir=/data -s3 -s3.port=8333 -filer -ip=seaweedfs"
+    volumes:
+      - seaweedfs_prod_data:/data
+    networks:
+      - maancamera_internal
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    restart: always
+    volumes:
+      - ollama_prod_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    networks:
+      - maancamera_internal
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    user: "1000:1000"
+    restart: "no"
+    command: alembic upgrade head
+    environment:
+      - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - maancamera_internal
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    user: "1000:1000"
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - COOKIE_SECURE=true
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://valkey:6379/0
+      - CELERY_BROKER_URL=redis://valkey:6379/1
+      - CELERY_RESULT_BACKEND=redis://valkey:6379/2
+      - S3_ENDPOINT_URL=http://seaweedfs:8333
+      - S3_PUBLIC_ENDPOINT_URL=${S3_PUBLIC_ENDPOINT_URL:?S3_PUBLIC_ENDPOINT_URL is required}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    networks:
+      - maancamera_internal
+      - maancamera_edge
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    user: "1000:1000"
+    restart: always
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
+      - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - CELERY_BROKER_URL=redis://valkey:6379/1
+      - CELERY_RESULT_BACKEND=redis://valkey:6379/2
+      - S3_ENDPOINT_URL=http://seaweedfs:8333
+      - S3_PUBLIC_ENDPOINT_URL=${S3_PUBLIC_ENDPOINT_URL:?S3_PUBLIC_ENDPOINT_URL is required}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    networks:
+      - maancamera_internal
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    user: "1001:1001"
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:?NEXT_PUBLIC_BACKEND_URL is required}
+      - NEXT_PUBLIC_S3_URL=${S3_PUBLIC_ENDPOINT_URL}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - maancamera_edge
+
+volumes:
+  postgres_prod_data:
+  valkey_prod_data:
+  seaweedfs_prod_data:
+  ollama_prod_models:
+
+networks:
+  maancamera_internal:
+    driver: bridge
+  maancamera_edge:
+    driver: bridge

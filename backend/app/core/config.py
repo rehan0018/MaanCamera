@@ -1,8 +1,9 @@
 """Application configuration management via Pydantic BaseSettings."""
 
-from typing import List
+from typing import Literal
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
 
 
 class Settings(BaseSettings):
@@ -34,11 +35,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     SESSION_COOKIE_NAME: str = "mc_session"
+    CSRF_COOKIE_NAME: str = "mc_csrf"
     COOKIE_SECURE: bool = False
-    COOKIE_SAMESITE: str = "lax"
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+
+    # Rate Limiting (Valkey-backed via slowapi)
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_STORAGE_URI: str | None = None
+
+    # Upload Limits
+    MAX_UPLOAD_SIZE_BYTES: int = 15 * 1024 * 1024  # 15 MB
 
     # CORS
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
@@ -84,6 +93,12 @@ class Settings(BaseSettings):
                 raise ValueError("Insecure default SECRET_KEY detected in production environment.")
             if self.CSRF_SECRET.startswith("dev_") or len(self.CSRF_SECRET) < 32:
                 raise ValueError("Insecure default CSRF_SECRET detected in production environment.")
+            if self.PAYMENT_PROVIDER == "mock":
+                raise ValueError("PAYMENT_PROVIDER=mock is forbidden in production environment.")
+            if self.PAYMENT_PROVIDER == "razorpay" and (
+                not self.RAZORPAY_KEY_ID or not self.RAZORPAY_KEY_SECRET or not self.RAZORPAY_WEBHOOK_SECRET
+            ):
+                raise ValueError("Razorpay keys and webhook secret must be configured in production.")
             self.COOKIE_SECURE = True
         return self
 

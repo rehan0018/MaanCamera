@@ -180,7 +180,6 @@ export default function SearchPage() {
     if (verifiedOnly && !p.verified) return false;
     return true;
   });
-  });
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -332,14 +331,14 @@ export default function SearchPage() {
 
                       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-400 mt-2">
                         <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-gray-500" /> {pro.city}</span>
-                        <span>â€¢</span>
+                        <span>•</span>
                         <span>{pro.experience} Years Experience</span>
-                        <span>â€¢</span>
-                        <span>Starting â‚¹{pro.starting_price.toLocaleString("en-IN")}</span>
+                        <span>•</span>
+                        <span>Starting ₹{pro.starting_price.toLocaleString("en-IN")}</span>
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 mt-3">
-                        {pro.styles.map((s) => (
+                        {pro.styles.map((s: string) => (
                           <span key={s} className="px-2 py-0.5 rounded bg-white/5 text-[10px] text-gray-300 font-medium">
                             {s}
                           </span>

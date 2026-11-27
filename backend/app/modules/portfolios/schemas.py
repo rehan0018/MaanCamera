@@ -1,79 +1,98 @@
 """Schemas for Portfolios, Projects, and Media Uploads."""
 
+import os
 import uuid
-from typing import List, Optional
-from datetime import date, datetime
-from pydantic import BaseModel, Field
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.config import settings
+
+ALLOWED_MIME_EXTENSIONS: dict[str, set[str]] = {
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/png": {".png"},
+    "image/webp": {".webp"},
+}
 
 
 class MediaAssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     storage_key: str
-    public_url: Optional[str]
+    public_url: str | None = None
     media_type: str
     mime_type: str
     file_size_bytes: int
-    width: Optional[int]
-    height: Optional[int]
+    width: int | None = None
+    height: int | None = None
+    processing_status: str
     display_order: int
-
-    class Config:
-        from_attributes = True
 
 
 class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     portfolio_id: uuid.UUID
     category_id: uuid.UUID
     title: str
     slug: str
-    style: Optional[str]
-    location: Optional[str]
-    project_date: Optional[date]
-    description: Optional[str]
-    cover_asset_id: Optional[uuid.UUID]
-    cover_url: Optional[str] = None
+    style: str | None = None
+    location: str | None = None
+    project_date: date | None = None
+    description: str | None = None
+    cover_asset_id: uuid.UUID | None = None
+    cover_url: str | None = None
     publication_status: str
-    tags: List[str] = []
-    media_assets: List[MediaAssetResponse] = []
-
-    class Config:
-        from_attributes = True
+    tags: list[str] = []
+    media_assets: list[MediaAssetResponse] = []
 
 
 class ProjectCreateRequest(BaseModel):
     portfolio_id: uuid.UUID
     category_id: uuid.UUID
     title: str = Field(..., min_length=2, max_length=200)
-    style: Optional[str] = None
-    location: Optional[str] = None
-    project_date: Optional[date] = None
-    description: Optional[str] = None
-    tags: List[str] = []
+    style: str | None = None
+    location: str | None = None
+    project_date: date | None = None
+    description: str | None = None
+    tags: list[str] = []
 
 
 class UploadUrlRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=255)
-    mime_type: str = Field(..., pattern=r"^(image/(jpeg|png|webp)|video/(mp4|webm|quicktime)|application/pdf)$")
-    file_size_bytes: int = Field(..., gt=0, le=100 * 1024 * 1024)  # Max 100 MB
+    mime_type: str = Field(..., pattern=r"^image/(jpeg|png|webp)$")
+    file_size_bytes: int = Field(..., gt=0, le=settings.MAX_UPLOAD_SIZE_BYTES)
     is_public: bool = True
+
+    @model_validator(mode="after")
+    def validate_extension_matches_mime(self) -> "UploadUrlRequest":
+        _, ext = os.path.splitext(self.filename.strip().lower())
+        allowed_exts = ALLOWED_MIME_EXTENSIONS.get(self.mime_type, set())
+        if ext not in allowed_exts:
+            raise ValueError(
+                f"File extension '{ext or 'none'}' does not match MIME type '{self.mime_type}'. "
+                f"Allowed extensions: {', '.join(sorted(allowed_exts))}."
+            )
+        return self
 
 
 class UploadUrlResponse(BaseModel):
     upload_url: str
     storage_key: str
-    public_url: Optional[str]
+    public_url: str | None = None
     bucket: str
     expires_in_seconds: int
+    max_content_length_bytes: int
 
 
 class CompleteMediaUploadRequest(BaseModel):
     project_id: uuid.UUID
-    storage_key: str
-    public_url: Optional[str] = None
-    media_type: str = "image"
-    mime_type: str
-    file_size_bytes: int
-    checksum: str
-    width: Optional[int] = None
-    height: Optional[int] = None
+    storage_key: str = Field(..., min_length=5, max_length=500)
+    media_type: str = Field("image", pattern=r"^image$")
+    mime_type: str = Field(..., pattern=r"^image/(jpeg|png|webp)$")
+    file_size_bytes: int = Field(..., gt=0, le=settings.MAX_UPLOAD_SIZE_BYTES)
+    checksum: str = Field(..., min_length=16, max_length=64)
+    width: int | None = Field(None, gt=0)
+    height: int | None = Field(None, gt=0)

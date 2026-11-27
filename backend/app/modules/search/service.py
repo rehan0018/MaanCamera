@@ -1,11 +1,18 @@
 """Search and comparison service using PostgreSQL structured filtering & ranking."""
 
 import uuid
-from typing import List, Optional, Dict, Any
-from sqlalchemy import select, and_, or_, func, desc
+from typing import Any
+
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.modules.professionals.models import ProfessionalProfile, Category, Service, ServicePackage
-from app.modules.search.schemas import SearchFilterParams, SearchCandidateResult, SearchResponse, ComparisonMatrix
+
+from app.modules.professionals.models import Category, ProfessionalProfile, Service
+from app.modules.search.schemas import (
+    ComparisonMatrix,
+    SearchCandidateResult,
+    SearchFilterParams,
+    SearchResponse,
+)
 
 
 class SearchService:
@@ -17,7 +24,7 @@ class SearchService:
                 Service.professional_id,
                 func.min(Service.starting_price_minor).label("min_price"),
             )
-            .where(Service.is_active == True)
+            .where(Service.is_active.is_(True))
             .group_by(Service.professional_id)
             .subquery()
         )
@@ -41,7 +48,7 @@ class SearchService:
                 .join(Category, Category.id == Service.category_id)
                 .where(
                     Category.slug == params.category_slug.strip().lower(),
-                    Service.is_active == True,
+                    Service.is_active.is_(True),
                 )
             )
             query = query.where(ProfessionalProfile.id.in_(cat_subq))
@@ -52,7 +59,7 @@ class SearchService:
             query = query.where(
                 or_(
                     func.lower(ProfessionalProfile.headline).like(style_term),
-                    func.lower(ProfessionalProfile.bio).like(style_term),
+                    func.lower(ProfessionalProfile.biography).like(style_term),
                 )
             )
 
@@ -113,7 +120,7 @@ class SearchService:
         )
 
     @staticmethod
-    async def compare_professionals(db: AsyncSession, professional_ids: List[uuid.UUID]) -> ComparisonMatrix:
+    async def compare_professionals(db: AsyncSession, professional_ids: list[uuid.UUID]) -> ComparisonMatrix:
         stmt = select(ProfessionalProfile).where(ProfessionalProfile.id.in_(professional_ids))
         res = await db.execute(stmt)
         profiles = res.scalars().all()
@@ -121,7 +128,7 @@ class SearchService:
         prof_list = []
         for p in profiles:
             # Fetch services
-            serv_q = select(Service).where(Service.professional_id == p.id, Service.is_active == True)
+            serv_q = select(Service).where(Service.professional_id == p.id, Service.is_active.is_(True))
             serv_res = await db.execute(serv_q)
             services = serv_res.scalars().all()
 
@@ -140,7 +147,7 @@ class SearchService:
                 "services": [s.name for s in services],
             })
 
-        feature_matrix = {
+        feature_matrix: dict[str, list[Any]] = {
             "Experience (Years)": [p["years_experience"] for p in prof_list],
             "City": [p["base_city"] for p in prof_list],
             "Rating": [p["avg_rating"] for p in prof_list],

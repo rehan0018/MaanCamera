@@ -14,8 +14,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maancamera} -d ${POSTGRES_DB:-maancamera_db}"]
       interval: 5s
@@ -28,7 +26,7 @@ services:
   # 2. CACHE & TASK QUEUE BROKER: Valkey 7.2 (BSD-3-Clause Open-Source)
   # ============================================================================
   valkey:
-    image: valkey/valkey:7.2-alpine
+    image: valkey/valkey:7.2.6-alpine
     container_name: maancamera_valkey
     restart: unless-stopped
     ports:
@@ -47,14 +45,14 @@ services:
   # 3. OBJECT STORAGE: SeaweedFS (Apache-2.0 S3-Compatible Storage)
   # ============================================================================
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:3.79
     container_name: maancamera_seaweedfs
     restart: unless-stopped
     command: "server -dir=/data -s3 -s3.port=8333 -filer -ip=seaweedfs"
     ports:
-      - "8333:8333" # S3 gateway endpoint
-      - "9333:9333" # SeaweedFS master port
-      - "8888:8888" # SeaweedFS filer port
+      - "8333:8333"
+      - "9333:9333"
+      - "8888:8888"
     volumes:
       - seaweedfs_data:/data
     networks:
@@ -64,7 +62,7 @@ services:
   # 4. LOCAL AI RUNTIME: Ollama (MIT License)
   # ============================================================================
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.5.7
     container_name: maancamera_ollama
     restart: unless-stopped
     ports:
@@ -77,7 +75,26 @@ services:
       - maancamera_net
 
   # ============================================================================
-  # 5. MODULAR BACKEND: FastAPI + Uvicorn
+  # 5. SCHEMA MIGRATIONS (Alembic Single Source of Truth)
+  # ============================================================================
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: maancamera_migrate
+    restart: "no"
+    command: sh -c "alembic upgrade head && python -m app.db.seed"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - maancamera_net
+
+  # ============================================================================
+  # 6. MODULAR BACKEND: FastAPI + Uvicorn (Dev Reload)
   # ============================================================================
   backend:
     build:
@@ -93,17 +110,23 @@ services:
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
-      - SYNC_DATABASE_URL=postgresql://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
       - REDIS_URL=redis://valkey:6379/0
       - CELERY_BROKER_URL=redis://valkey:6379/1
+      - CELERY_RESULT_BACKEND=redis://valkey:6379/2
       - S3_ENDPOINT_URL=http://seaweedfs:8333
       - S3_PUBLIC_ENDPOINT_URL=http://localhost:8333
       - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-maancamera_s3_admin}
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-maancamera_s3_secret_key_dev}
       - OLLAMA_BASE_URL=http://ollama:11434
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       valkey:
         condition: service_healthy
       seaweedfs:
@@ -112,7 +135,7 @@ services:
       - maancamera_net
 
   # ============================================================================
-  # 6. ASYNC WORKERS: Celery for Media Processing & Background Intelligence
+  # 7. ASYNC WORKERS: Celery for Media Processing & Background Intelligence
   # ============================================================================
   celery_worker:
     build:
@@ -125,22 +148,24 @@ services:
       - ./backend:/app
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
+      - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-maancamera}:${POSTGRES_PASSWORD:-maancamera_local_dev_password}@postgres:5432/${POSTGRES_DB:-maancamera_db}
       - CELERY_BROKER_URL=redis://valkey:6379/1
       - CELERY_RESULT_BACKEND=redis://valkey:6379/2
       - S3_ENDPOINT_URL=http://seaweedfs:8333
+      - S3_PUBLIC_ENDPOINT_URL=http://localhost:8333
       - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-maancamera_s3_admin}
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-maancamera_s3_secret_key_dev}
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       valkey:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     networks:
       - maancamera_net
 
   # ============================================================================
-  # 7. WEB FRONTEND: Next.js 14 App Router + Tailwind CSS
+  # 8. WEB FRONTEND: Next.js 14 App Router + Tailwind CSS
   # ============================================================================
   frontend:
     build:
@@ -150,15 +175,17 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/api/v1
       - NEXT_PUBLIC_S3_URL=http://localhost:8333
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - maancamera_net
 

@@ -71,7 +71,7 @@ export default function AdminDashboard() {
             >
               <div>
                 <div className="font-bold text-white text-sm">{v.name}</div>
-                <div className="text-gray-400 mt-0.5">{v.type} â€¢ {v.city} â€¢ Submitted {v.submitted}</div>
+                <div className="text-gray-400 mt-0.5">{v.type} • {v.city} • Submitted {v.submitted}</div>
                 <div className="text-gray-300 mt-1">Documents: <strong className="text-emerald-400">{v.documents}</strong></div>
               </div>
 
@@ -115,7 +115,7 @@ export default function AdminDashboard() {
             >
               <div>
                 <div className="font-bold text-white">{r.target}</div>
-                <div className="text-gray-400">Reporter: {r.reporter} â€¢ Reason: <span className="text-amber-400">{r.reason}</span></div>
+                <div className="text-gray-400">Reporter: {r.reporter} • Reason: <span className="text-amber-400">{r.reason}</span></div>
               </div>
               <div className="flex gap-2">
                 <button
