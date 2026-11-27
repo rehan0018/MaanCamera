@@ -41,7 +41,7 @@ class EnquiryService:
             )
             db.add(recipient)
 
-        await db.commit()
+        await db.flush()
         return await EnquiryService.get_enquiry_by_id(db, enquiry.id)
 
     @staticmethod

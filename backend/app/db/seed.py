@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal, apply_rls_context
 from app.core.security import hash_password
 from app.modules.bookings.models import Booking
 from app.modules.enquiries.models import Enquiry, EnquiryRecipient
@@ -36,6 +36,7 @@ def seed_uuid(key: str) -> uuid.UUID:
 async def seed_database() -> None:
     """Populate idempotent development seed data aligned with README credentials."""
     async with AsyncSessionLocal() as db:
+        await apply_rls_context(db, role="system")
         # 1. Subscription Plans
         plans_data = [
             {

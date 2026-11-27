@@ -8,11 +8,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
+from app.core.database import apply_rls_context
 from app.core.exceptions import (
     BusinessRuleViolationException,
     ForbiddenException,
@@ -85,8 +86,7 @@ class PaymentService:
             payment_type=req.payment_type,
         )
         db.add(payment)
-        await db.commit()
-        await db.refresh(payment)
+        await db.flush()
 
         return CreatePaymentOrderResponse(
             payment_id=payment.id,
@@ -131,6 +131,21 @@ class PaymentService:
             booking.booking_status = "confirmed"
 
     @staticmethod
+    async def _persist_failed_payment(db: AsyncSession, payment_id: uuid.UUID) -> None:
+        """Release active transaction lock cleanly and persist failed payment status."""
+        if not db.bind:
+            return
+        if db.in_transaction():
+            await db.rollback()
+        iso_factory = async_sessionmaker(bind=db.bind, class_=AsyncSession, expire_on_commit=False)
+        async with iso_factory() as iso_db:
+            await apply_rls_context(iso_db, role="system")
+            failed_payment = await iso_db.get(Payment, payment_id)
+            if failed_payment and failed_payment.payment_status != "captured":
+                failed_payment.payment_status = "failed"
+                await iso_db.commit()
+
+    @staticmethod
     async def verify_payment(
         db: AsyncSession, current_user: User, req: VerifyPaymentRequest
     ) -> Payment:
@@ -162,12 +177,10 @@ class PaymentService:
                 raise BusinessRuleViolationException("Mock payment verification is disabled in production.")
             expected_mock = compute_mock_signature(payment.provider_order_id or "", req.provider_payment_id)
             if not hmac.compare_digest(req.provider_signature, expected_mock):
-                payment.payment_status = "failed"
-                await db.commit()
+                await PaymentService._persist_failed_payment(db, payment.id)
                 raise BusinessRuleViolationException("Payment signature verification failed.")
             if req.amount_minor is not None and req.amount_minor != payment.amount_minor:
-                payment.payment_status = "failed"
-                await db.commit()
+                await PaymentService._persist_failed_payment(db, payment.id)
                 raise BusinessRuleViolationException("Verified payment amount mismatch.")
 
         elif payment.provider == "razorpay":
@@ -179,8 +192,7 @@ class PaymentService:
                 hashlib.sha256,
             ).hexdigest()
             if not hmac.compare_digest(req.provider_signature, expected):
-                payment.payment_status = "failed"
-                await db.commit()
+                await PaymentService._persist_failed_payment(db, payment.id)
                 raise BusinessRuleViolationException("Payment signature verification failed.")
 
             # Confirm amount & currency from Razorpay gateway payload rather than trusting client
@@ -194,8 +206,7 @@ class PaymentService:
                 or (entity_order_id and entity_order_id != payment.provider_order_id)
                 or entity.get("status") not in ("captured", "authorized")
             ):
-                payment.payment_status = "failed"
-                await db.commit()
+                await PaymentService._persist_failed_payment(db, payment.id)
                 raise BusinessRuleViolationException("Gateway payment amount or status mismatch.")
         else:
             raise BusinessRuleViolationException(f"Unsupported payment provider '{payment.provider}'.")
@@ -206,8 +217,7 @@ class PaymentService:
             provider_payment_id=req.provider_payment_id,
             signature=req.provider_signature,
         )
-        await db.commit()
-        await db.refresh(payment)
+        await db.flush()
         return payment
 
     @staticmethod
@@ -219,8 +229,7 @@ class PaymentService:
         payload_str: str,
         signature: str | None = None,
     ) -> bool:
-        if db.bind and db.bind.dialect.name == "postgresql":
-            await db.execute(text("SELECT set_config('app.current_user_role', 'system', true)"))
+        await apply_rls_context(db, role="system")
 
         # Always fail closed when webhook secret or signature is missing
         if provider == "razorpay":
@@ -305,10 +314,10 @@ class PaymentService:
             received_at=datetime.now(UTC),
             processed_at=datetime.now(UTC),
         )
-        db.add(event)
         try:
-            await db.commit()
+            async with db.begin_nested():
+                db.add(event)
+                await db.flush()
         except IntegrityError:
-            await db.rollback()
             return True
         return True

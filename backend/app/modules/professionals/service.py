@@ -84,7 +84,7 @@ class ProfessionalService:
             travel_available=req.travel_available,
         )
         db.add(profile)
-        await db.commit()
+        await db.flush()
         return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
 
     @staticmethod
@@ -107,7 +107,7 @@ class ProfessionalService:
         for field, value in updates.items():
             setattr(profile, field, value)
 
-        await db.commit()
+        await db.flush()
         return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
 
     @staticmethod
@@ -126,7 +126,7 @@ class ProfessionalService:
             raise ForbiddenException("You do not have permission to delete this professional profile.")
 
         await db.delete(profile)
-        await db.commit()
+        await db.flush()
         return True
 
     @staticmethod
@@ -154,7 +154,7 @@ class ProfessionalService:
             is_active=True,
         )
         db.add(service)
-        await db.commit()
+        await db.flush()
         stmt = select(Service).options(selectinload(Service.packages)).where(Service.id == service.id)
         res = await db.execute(stmt)
         return res.scalar_one()

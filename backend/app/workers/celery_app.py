@@ -105,6 +105,7 @@ def process_uploaded_media(asset_id: str, storage_key: str) -> dict[str, object]
     )
 
     with Session(engine) as session:
+        session.info["rls_user_role"] = "system"
         asset = session.execute(
             select(MediaAsset).where(MediaAsset.id == uuid.UUID(asset_id))
         ).scalar_one_or_none()

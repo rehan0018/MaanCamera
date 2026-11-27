@@ -24,6 +24,25 @@ export interface ApiResponse<T> {
   };
 }
 
+export interface UserSessionItem {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  is_current: boolean;
+}
+
+export interface ConsentRecordItem {
+  id: string;
+  consent_type: string;
+  policy_version: string;
+  granted: boolean;
+  recorded_at: string;
+}
+
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") {
     return null;
@@ -99,13 +118,16 @@ export async function apiFetch<T>(
 }
 
 export const api = {
-  // Authentication
+  // Authentication & Account Security
   getCsrf: () => apiFetch<{ csrf_token: string }>("/auth/csrf"),
   login: (data: ApiSchemas["UserLoginRequest"]) =>
     apiFetch<any>("/auth/login", { method: "POST", body: JSON.stringify(data) }),
   register: (
-    data: Omit<ApiSchemas["UserRegisterRequest"], "role"> & {
+    data: Omit<ApiSchemas["UserRegisterRequest"], "role" | "accept_terms" | "accept_privacy" | "marketing_opt_in"> & {
       role?: ApiSchemas["UserRegisterRequest"]["role"];
+      accept_terms?: boolean;
+      accept_privacy?: boolean;
+      marketing_opt_in?: boolean;
     }
   ) =>
     apiFetch<any>("/auth/register", {
@@ -113,10 +135,37 @@ export const api = {
       body: JSON.stringify({
         ...data,
         role: data.role ?? "customer",
+        accept_terms: data.accept_terms ?? true,
+        accept_privacy: data.accept_privacy ?? true,
+        marketing_opt_in: data.marketing_opt_in ?? false,
       } satisfies ApiSchemas["UserRegisterRequest"]),
     }),
+  refreshSession: () => apiFetch<any>("/auth/refresh", { method: "POST" }),
   logout: () => apiFetch<any>("/auth/logout", { method: "POST" }),
+  requestEmailVerification: () => apiFetch<any>("/auth/verify-email/request", { method: "POST" }),
+  confirmEmailVerification: (data: ApiSchemas["EmailVerifyConfirmRequest"]) =>
+    apiFetch<any>("/auth/verify-email/confirm", { method: "POST", body: JSON.stringify(data) }),
+  requestPhoneOtp: (data: ApiSchemas["PhoneOtpRequest"]) =>
+    apiFetch<any>("/auth/verify-phone/request", { method: "POST", body: JSON.stringify(data) }),
+  confirmPhoneOtp: (data: ApiSchemas["PhoneOtpConfirmRequest"]) =>
+    apiFetch<any>("/auth/verify-phone/confirm", { method: "POST", body: JSON.stringify(data) }),
+  requestPasswordReset: (data: ApiSchemas["PasswordResetRequest"]) =>
+    apiFetch<any>("/auth/password-reset/request", { method: "POST", body: JSON.stringify(data) }),
+  confirmPasswordReset: (data: ApiSchemas["PasswordResetConfirmRequest"]) =>
+    apiFetch<any>("/auth/password-reset/confirm", { method: "POST", body: JSON.stringify(data) }),
+  listSessions: () => apiFetch<UserSessionItem[]>("/auth/sessions"),
+  revokeSession: (sessionId: string) =>
+    apiFetch<any>(`/auth/sessions/${sessionId}`, { method: "DELETE" }),
+  setupTotp: () => apiFetch<{ secret: string; otpauth_uri: string }>("/auth/totp/setup", { method: "POST" }),
+  enableTotp: (data: ApiSchemas["TotpCodeRequest"]) =>
+    apiFetch<any>("/auth/totp/enable", { method: "POST", body: JSON.stringify(data) }),
+  disableTotp: (data: ApiSchemas["TotpCodeRequest"]) =>
+    apiFetch<any>("/auth/totp/disable", { method: "POST", body: JSON.stringify(data) }),
   getCurrentUser: () => apiFetch<any>("/users/me"),
+  getMyConsents: () => apiFetch<ConsentRecordItem[]>("/users/me/consents"),
+  exportMyData: () => apiFetch<Record<string, unknown>>("/users/me/export"),
+  deleteMyAccount: (data: ApiSchemas["DeleteAccountRequest"]) =>
+    apiFetch<any>("/users/me", { method: "DELETE", body: JSON.stringify(data) }),
 
   // Discovery & Search
   searchProfessionals: (params: { category_slug?: string; city?: string; verified_only?: boolean; page?: number; limit?: number }) => {

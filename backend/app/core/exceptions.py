@@ -82,3 +82,12 @@ class ValidationException(MaanCameraException):
             details=details,
             status_code=422,
         )
+
+
+class LockedException(MaanCameraException):
+    def __init__(self, message: str = "Account is temporarily locked."):
+        super().__init__(
+            code="ACCOUNT_LOCKED",
+            message=message,
+            status_code=423,
+        )

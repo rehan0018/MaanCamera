@@ -40,9 +40,12 @@ jobs:
       ENVIRONMENT: test
       SECRET_KEY: ci-test-secret-key-must-be-at-least-thirty-two-bytes-long
       CSRF_SECRET: ci-test-csrf-secret-key-must-be-at-least-thirty-two-bytes
-      DATABASE_URL: postgresql+asyncpg://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      APP_DB_USER: maancamera_app
+      APP_DB_PASSWORD: maancamera_app_ci_password
+      DATABASE_URL: postgresql+asyncpg://maancamera_app:maancamera_app_ci_password@localhost:5432/maancamera_db
       SYNC_DATABASE_URL: postgresql+psycopg2://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
-      TEST_DATABASE_URL: postgresql+asyncpg://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      TEST_ADMIN_DATABASE_URL: postgresql+asyncpg://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
+      TEST_DATABASE_URL: postgresql+asyncpg://maancamera_app:maancamera_app_ci_password@localhost:5432/maancamera_db
       REDIS_URL: redis://localhost:6379/0
       RATE_LIMIT_STORAGE_URI: redis://localhost:6379/0
       PAYMENT_PROVIDER: mock
@@ -112,6 +115,10 @@ jobs:
       - name: Install Locked Dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+
+      - name: Dependency Security Audit
+        working-directory: frontend
+        run: pnpm audit --audit-level=high
 
       - name: TypeScript Typecheck
         working-directory: frontend

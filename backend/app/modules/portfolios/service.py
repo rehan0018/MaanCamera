@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.database import register_after_commit
 from app.core.exceptions import (
     BusinessRuleViolationException,
     ForbiddenException,
@@ -79,11 +80,13 @@ class PortfolioService:
             publication_status="published",
         )
         db.add(project)
-        await db.commit()
+        await db.flush()
         return await PortfolioService.get_project_by_id(db, project.id)
 
     @staticmethod
     async def generate_upload_url(current_user: User, req: UploadUrlRequest) -> UploadUrlResponse:
+        if current_user.role not in ("professional", "admin"):
+            raise ForbiddenException("Only professionals may generate portfolio media upload URLs.")
         _, ext = os.path.splitext(req.filename.strip().lower())
         result = await storage_service.generate_presigned_upload_url(
             owner_user_id=current_user.id,
@@ -135,11 +138,16 @@ class PortfolioService:
             project.cover_asset_id = asset.id
             await db.flush()
 
-        await db.commit()
-        await db.refresh(asset)
+        await db.flush()
 
-        # Enqueue async Pillow validation + EXIF stripping + WebP generation
-        with contextlib.suppress(Exception):
-            process_uploaded_media.delay(str(asset.id), asset.storage_key)
+        # Enqueue async Pillow validation + EXIF stripping + WebP generation strictly after commit
+        asset_id_str = str(asset.id)
+        asset_storage_key = asset.storage_key
+
+        def _dispatch_media_job() -> None:
+            with contextlib.suppress(Exception):
+                process_uploaded_media.delay(asset_id_str, asset_storage_key)
+
+        register_after_commit(db, _dispatch_media_job)
 
         return asset

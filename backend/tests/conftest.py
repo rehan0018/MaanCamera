@@ -1,12 +1,15 @@
 """Pytest configuration and async fixtures supporting PostgreSQL (CI) and SQLite (local fallback)."""
 
 import contextlib
+import inspect
 import os
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-# Default rate-limit storage to in-memory for local unit tests unless CI/env provides Valkey URI
+# Ensure deterministic environment defaults before importing app modules
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "true")
 os.environ.setdefault("RATE_LIMIT_STORAGE_URI", os.environ.get("TEST_REDIS_URL", "memory://"))
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -50,9 +53,10 @@ import app.modules.payments.models  # noqa: E402, F401
 import app.modules.platform.models  # noqa: E402, F401
 import app.modules.quotations.models  # noqa: E402, F401
 import app.modules.reviews.models  # noqa: E402, F401
-from app.core.database import Base, get_db  # noqa: E402
+from app.core.database import Base, apply_rls_context, get_db  # noqa: E402
 from app.core.rate_limit import limiter  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
+from app.integrations.notifications.mailer import clear_test_outbox  # noqa: E402
 from app.main import app  # noqa: E402
 from app.modules.identity.models import User  # noqa: E402
 from app.modules.portfolios.models import Portfolio, Project  # noqa: E402
@@ -93,12 +97,22 @@ async def test_engine():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     else:
-        # Clean all tables between tests when running against Alembic-migrated PostgreSQL
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT set_config('app.current_user_role', 'system', true)"))
-            table_names = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
-            if table_names:
-                await conn.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
+        # Use owner/admin DB connection for TRUNCATE cleanup so TEST_DATABASE_URL can run as non-owner app role
+        admin_url = os.environ.get("TEST_ADMIN_DATABASE_URL", "").strip() or db_url
+        admin_engine = create_async_engine(admin_url) if admin_url != db_url else engine
+        try:
+            async with admin_engine.begin() as conn:
+                await conn.execute(text("SELECT set_config('app.current_user_role', 'system', true)"))
+                table_names = ", ".join(
+                    f'"{t.name}"'
+                    for t in reversed(Base.metadata.sorted_tables)
+                    if t.name != "alembic_version"
+                )
+                if table_names:
+                    await conn.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))
+        finally:
+            if admin_engine is not engine:
+                await admin_engine.dispose()
 
     yield engine
 
@@ -121,8 +135,7 @@ async def session_factory(test_engine):
 @pytest_asyncio.fixture
 async def db_session(session_factory) -> AsyncGenerator[AsyncSession, None]:
     async with session_factory() as session:
-        if session.bind and session.bind.dialect.name == "postgresql":
-            await session.execute(text("SELECT set_config('app.current_user_role', 'system', true)"))
+        await apply_rls_context(session, role="system")
         yield session
 
 
@@ -130,20 +143,35 @@ async def db_session(session_factory) -> AsyncGenerator[AsyncSession, None]:
 async def client(session_factory) -> AsyncGenerator[AsyncClient, None]:
     # Keep generic test suite deterministic even without Valkey or >5 login calls
     limiter.enabled = False
+    clear_test_outbox()
 
     async def override_get_db():
         async with session_factory() as session:
             try:
                 yield session
+                if session.in_transaction():
+                    await session.commit()
+                callbacks = session.sync_session.info.pop("after_commit_callbacks", [])
+                for cb in callbacks:
+                    res = cb()
+                    if inspect.isawaitable(res):
+                        await res
             except Exception:
-                await session.rollback()
+                session.sync_session.info.pop("after_commit_callbacks", None)
+                if session.in_transaction():
+                    await session.rollback()
                 raise
+            finally:
+                session.sync_session.info.pop("rls_user_id", None)
+                session.sync_session.info.pop("rls_user_role", None)
+                await session.close()
 
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver/api/v1") as ac:
         yield ac
     app.dependency_overrides.clear()
+    clear_test_outbox()
     limiter.enabled = True
 
 

@@ -61,11 +61,13 @@ services:
       - ENVIRONMENT=production
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - APP_DB_USER=${APP_DB_USER:-maancamera_app}
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
       - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
       postgres:
@@ -79,7 +81,7 @@ services:
       dockerfile: Dockerfile
     user: "1000:1000"
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-127.0.0.1}"
     ports:
       - "8000:8000"
     environment:
@@ -88,11 +90,13 @@ services:
       - COOKIE_SECURE=true
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - APP_DB_USER=${APP_DB_USER:-maancamera_app}
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
       - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://valkey:6379/0
       - CELERY_BROKER_URL=redis://valkey:6379/1
@@ -127,11 +131,13 @@ services:
       - ENVIRONMENT=production
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required}
       - CSRF_SECRET=${CSRF_SECRET:?CSRF_SECRET is required}
+      - APP_DB_USER=${APP_DB_USER:-maancamera_app}
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
       - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
       - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
       - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - CELERY_BROKER_URL=redis://valkey:6379/1
       - CELERY_RESULT_BACKEND=redis://valkey:6379/2

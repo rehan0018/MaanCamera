@@ -76,8 +76,7 @@ class ReviewService:
             prof.total_reviews = int(count_r or 0)
             # completed_bookings_count is managed upon booking completion, not upon review submission
 
-        await db.commit()
-        await db.refresh(review)
+        await db.flush()
         return review
 
     @staticmethod
@@ -109,6 +108,5 @@ class ReviewService:
             status="pending",
         )
         db.add(report)
-        await db.commit()
-        await db.refresh(report)
+        await db.flush()
         return report

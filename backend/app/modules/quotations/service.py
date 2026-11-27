@@ -75,8 +75,7 @@ class QuotationService:
         if recipient and recipient.recipient_status == "sent":
             recipient.recipient_status = "quoted"
 
-        await db.commit()
-        await db.refresh(quotation)
+        await db.flush()
         return quotation
 
     @staticmethod
@@ -127,8 +126,7 @@ class QuotationService:
             status="sent",
         )
         db.add(new_quotation)
-        await db.commit()
-        await db.refresh(new_quotation)
+        await db.flush()
         return new_quotation
 
     @staticmethod
@@ -170,7 +168,5 @@ class QuotationService:
             completion_status="pending",
         )
         db.add(booking)
-        await db.commit()
-        await db.refresh(quotation)
-        await db.refresh(booking)
+        await db.flush()
         return quotation, booking

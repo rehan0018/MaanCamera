@@ -77,8 +77,7 @@ class BookingService:
             )
 
         booking.booking_status = new_status
-        await db.commit()
-        await db.refresh(booking)
+        await db.flush()
         return booking
 
     @staticmethod
@@ -100,8 +99,7 @@ class BookingService:
         if prof:
             prof.completed_bookings_count = (prof.completed_bookings_count or 0) + 1
 
-        await db.commit()
-        await db.refresh(booking)
+        await db.flush()
         return booking
 
     @staticmethod
@@ -114,6 +112,5 @@ class BookingService:
 
         booking.booking_status = "cancelled"
         booking.cancellation_reason = reason
-        await db.commit()
-        await db.refresh(booking)
+        await db.flush()
         return booking

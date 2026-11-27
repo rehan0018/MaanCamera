@@ -2,6 +2,7 @@
 
 import re
 import uuid
+from collections import defaultdict
 from typing import Any
 
 from sqlalchemy import func, select
@@ -126,104 +127,149 @@ class AIService:
             res = await db.execute(stmt)
             candidates = list(res.scalars().all())
 
-        # Stage 2: 7-Factor Weighted Relevance Ranking
-        # Formula: Score = 0.25*S + 0.20*V + 0.15*R + 0.15*B + 0.10*A + 0.10*E + 0.05*T
-        scored_candidates: list[tuple[ProfessionalProfile, float, str, list[str], int]] = []
+        if not candidates:
+            session = RecommendationSession(
+                customer_id=customer_id,
+                query_text=query,
+                extracted_requirements=requirements,
+                ranking_version="v2.1-known-factor-reweighted",
+            )
+            db.add(session)
+            await db.flush()
+            return RecommendationResponse(
+                session_id=session.id,
+                query=query,
+                extracted_requirements=requirements,
+                total_matches=0,
+                recommendations=[],
+            )
+
+        candidate_ids = [p.id for p in candidates]
+
+        # Batch fetch prices, category slugs, and published project titles in 3 grouped queries
+        price_stmt = (
+            select(Service.professional_id, func.min(Service.starting_price_minor))
+            .where(Service.professional_id.in_(candidate_ids), Service.is_active.is_(True))
+            .group_by(Service.professional_id)
+        )
+        price_map: dict[uuid.UUID, int] = {
+            pid: int(min_p or 0) for pid, min_p in (await db.execute(price_stmt)).all()
+        }
+
+        cat_stmt = (
+            select(Service.professional_id, Category.slug)
+            .join(Category, Service.category_id == Category.id)
+            .where(Service.professional_id.in_(candidate_ids), Service.is_active.is_(True))
+        )
+        cats_map: dict[uuid.UUID, list[str]] = defaultdict(list)
+        for pid, slug in (await db.execute(cat_stmt)).all():
+            cats_map[pid].append(slug.lower())
+
+        proj_stmt = (
+            select(Portfolio.professional_id, Project.title)
+            .join(Portfolio, Portfolio.id == Project.portfolio_id)
+            .where(
+                Portfolio.professional_id.in_(candidate_ids),
+                Project.publication_status == "published",
+            )
+            .order_by(Project.created_at.desc())
+        )
+        proj_map: dict[uuid.UUID, list[str]] = defaultdict(list)
+        for pid, title in (await db.execute(proj_stmt)).all():
+            proj_map[pid].append(title)
+
+        # Stage 2: Dynamic Weighted Relevance Ranking over KNOWN factors only (no fabricated defaults)
+        scored_candidates: list[
+            tuple[ProfessionalProfile, float, str, list[str], int, dict[str, float | None]]
+        ] = []
 
         for p in candidates:
-            # Query lowest starting price from active services (avoids crash on p.starting_price_minor)
-            price_stmt = select(func.min(Service.starting_price_minor)).where(
-                Service.professional_id == p.id, Service.is_active.is_(True)
-            )
-            price_res = await db.execute(price_stmt)
-            cand_starting_price = price_res.scalar() or 0
+            cand_starting_price = price_map.get(p.id, 0)
+            prof_cats = cats_map.get(p.id, [])
+            proj_titles = proj_map.get(p.id, [])
+            proj_cnt = len(proj_titles)
 
-            # 1. Skills / Category Match (S) [0-100]
-            cat_stmt = (
-                select(Category.slug)
-                .join(Service, Service.category_id == Category.id)
-                .where(Service.professional_id == p.id, Service.is_active.is_(True))
-            )
-            cat_res = await db.execute(cat_stmt)
-            prof_cats = [cat.lower() for cat in cat_res.scalars().all()]
+            # 1. Skills / Category Match [0-100] or None when unspecified
             if not target_cats:
-                s_score = 80.0
+                skills_score: float | None = None
             elif any(tc in pc or pc in tc for tc in target_cats for pc in prof_cats):
-                s_score = 100.0
+                skills_score = 100.0
             else:
-                s_score = 35.0
+                skills_score = 20.0
 
-            # 2. Visual portfolio volume & depth (V) [0-100]
-            proj_stmt = (
-                select(func.count(Project.id))
-                .join(Portfolio, Portfolio.id == Project.portfolio_id)
-                .where(Portfolio.professional_id == p.id, Project.publication_status == "published")
+            # 2. Portfolio Depth [0-100] (no minimum floor inflation when 0 published projects)
+            portfolio_score = min(100.0, float(proj_cnt * 25.0))
+
+            # 3. Verified Review Quality [0-100] or None when zero verified reviews
+            review_score: float | None = (
+                min(100.0, (float(p.avg_rating) / 5.0) * 80.0 + min(20.0, float(p.total_reviews * 4.0)))
+                if p.total_reviews > 0
+                else None
             )
-            proj_cnt_res = await db.execute(proj_stmt)
-            proj_cnt = proj_cnt_res.scalar() or 0
-            v_score = min(100.0, max(25.0, float(proj_cnt * 25.0)))
 
-            # 3. Verified review quality (R) [0-100]
-            # Combination of average rating and review volume
-            r_score = min(100.0, (float(p.avg_rating) / 5.0) * 80.0 + min(20.0, float(p.total_reviews * 4.0)))
-
-            # 4. Budget suitability (B) [0-100]
+            # 4. Budget Suitability [0-100] or None when budget or price unknown
             if budget_max and cand_starting_price > 0:
                 if cand_starting_price <= budget_max:
-                    b_score = 100.0
+                    budget_score: float | None = 100.0
                 else:
-                    ratio = budget_max / cand_starting_price
-                    b_score = max(20.0, ratio * 100.0)
+                    budget_score = max(10.0, (budget_max / cand_starting_price) * 100.0)
             else:
-                b_score = 85.0
+                budget_score = None
 
-            # 5. Availability & Travel (A) [0-100]
+            # 5. Location & Travel Fit [0-100] or None when city unspecified
             if city:
                 if p.base_city.strip().lower() == city.strip().lower():
-                    a_score = 100.0
+                    location_score: float | None = 100.0
                 elif p.travel_available:
-                    a_score = 75.0
+                    location_score = 75.0
                 else:
-                    a_score = 25.0
+                    location_score = 25.0
             else:
-                a_score = 90.0
+                location_score = None
 
-            # 6. Relevant experience (E) [0-100]
-            e_score = min(100.0, max(20.0, float(p.years_experience) * 10.0))
+            # 6. Relevant Experience [0-100]
+            experience_score = min(100.0, float(p.years_experience or 0) * 10.0)
 
-            # 7. Trust & Verification (T) [0-100]
-            t_score = 100.0 if p.verification_status == "verified" else (65.0 if p.verification_status == "in_review" else 40.0)
+            # 7. Trust & Verification [0-100]
+            trust_score = (
+                100.0
+                if p.verification_status == "verified"
+                else (65.0 if p.verification_status == "in_review" else 40.0)
+            )
 
-            # Final weighted composite
-            composite = (
-                0.25 * s_score
-                + 0.20 * v_score
-                + 0.15 * r_score
-                + 0.15 * b_score
-                + 0.10 * a_score
-                + 0.10 * e_score
-                + 0.05 * t_score
-            ) / 100.0  # Normalize to 0.0 - 1.0
+            weighted_factors: list[tuple[float, float | None]] = [
+                (0.25, skills_score),
+                (0.20, portfolio_score),
+                (0.15, review_score),
+                (0.15, budget_score),
+                (0.10, location_score),
+                (0.10, experience_score),
+                (0.05, trust_score),
+            ]
+            active_factors = [(w, s) for w, s in weighted_factors if s is not None]
+            total_weight = sum(w for w, _ in active_factors) or 1.0
+            composite = sum(w * s for w, s in active_factors) / (total_weight * 100.0)
 
-            # Grounded explanation (clean UTF-8 ★, no mojibake)
+            factor_breakdown: dict[str, float | None] = {
+                "skills_match": skills_score,
+                "portfolio_depth": portfolio_score,
+                "review_quality": review_score,
+                "budget_fit": budget_score,
+                "location_fit": location_score,
+                "experience": experience_score,
+                "trust_verification": trust_score,
+            }
+
             rating_str = f"{p.avg_rating:.1f}★" if p.total_reviews > 0 else "New Professional"
             explanation = (
                 f"Recommended based on {p.years_experience} years of {p.base_city} experience, "
                 f"a {rating_str} verified rating across {p.total_reviews} reviews, "
-                f"and active portfolio matching your creative requirements."
+                f"and {proj_cnt} published portfolio projects."
             )
 
-            # Fetch representative project titles
-            proj_title_stmt = (
-                select(Project.title)
-                .join(Portfolio, Portfolio.id == Project.portfolio_id)
-                .where(Portfolio.professional_id == p.id, Project.publication_status == "published")
-                .limit(2)
+            scored_candidates.append(
+                (p, composite, explanation, proj_titles[:2], cand_starting_price, factor_breakdown)
             )
-            proj_title_res = await db.execute(proj_title_stmt)
-            projects = list(proj_title_res.scalars().all())
-
-            scored_candidates.append((p, composite, explanation, projects, cand_starting_price))
 
         # Sort descending by composite score
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
@@ -233,19 +279,21 @@ class AIService:
             customer_id=customer_id,
             query_text=query,
             extracted_requirements=requirements,
-            ranking_version="v2.0-dynamic-7factor",
+            ranking_version="v2.1-known-factor-reweighted",
         )
         db.add(session)
         await db.flush()
 
         results: list[RecommendationItemResponse] = []
-        for idx, (cand, score, explanation, projs, start_price) in enumerate(scored_candidates[:10], start=1):
+        for idx, (cand, score, explanation, projs, start_price, factors) in enumerate(
+            scored_candidates[:10], start=1
+        ):
             item = RecommendationItem(
                 session_id=session.id,
                 professional_id=cand.id,
                 relevance_score=round(score, 4),
                 ranking_position=idx,
-                explanation_data={"explanation": explanation, "projects": projs},
+                explanation_data={"explanation": explanation, "projects": projs, "factors": factors},
             )
             db.add(item)
 
@@ -268,7 +316,7 @@ class AIService:
                 )
             )
 
-        await db.commit()
+        await db.flush()
 
         return RecommendationResponse(
             session_id=session.id,

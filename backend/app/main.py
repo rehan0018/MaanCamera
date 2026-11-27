@@ -18,7 +18,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.exceptions import AppException
 from app.core.rate_limit import limiter
 from app.core.responses import error_response
-from app.core.security import verify_csrf_token
+from app.core.security import PiiScrubbingFilter, verify_csrf_token
 from app.modules.ai.router import router as ai_router
 from app.modules.bookings.router import router as bookings_router
 from app.modules.enquiries.router import router as enquiries_router
@@ -31,7 +31,10 @@ from app.modules.reviews.router import router as reviews_router
 from app.modules.search.router import router as search_router
 
 logging.basicConfig(level=logging.INFO)
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(PiiScrubbingFilter())
 logger = logging.getLogger("maancamera")
+logger.addFilter(PiiScrubbingFilter())
 
 
 @asynccontextmanager
@@ -74,10 +77,10 @@ async def security_and_request_context_middleware(request: Request, call_next):
     if request.method in ("POST", "PATCH", "PUT", "DELETE"):
         webhook_prefix = f"{settings.API_V1_PREFIX}/payments/webhooks/"
         if not request.url.path.startswith(webhook_prefix):
-            allowed_origins = {
-                _normalize_origin(o)
-                for o in [*settings.CORS_ORIGINS, settings.FRONTEND_URL, settings.BACKEND_URL, "http://testserver"]
-            }
+            origin_candidates = [*settings.CORS_ORIGINS, settings.FRONTEND_URL, settings.BACKEND_URL]
+            if settings.ENVIRONMENT == "test":
+                origin_candidates.append("http://testserver")
+            allowed_origins = {_normalize_origin(o) for o in origin_candidates}
 
             origin = request.headers.get("Origin")
             referer = request.headers.get("Referer")
@@ -115,6 +118,19 @@ async def security_and_request_context_middleware(request: Request, call_next):
     process_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time-Ms"] = str(process_time_ms)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if not (
+        settings.ENVIRONMENT != "production"
+        and request.url.path in ("/docs", "/redoc", "/api/v1/openapi.json")
+    ):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        )
+    if settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -125,8 +141,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-CSRF-Token",
+        "X-Request-ID",
+        "Idempotency-Key",
+    ],
     expose_headers=["X-Request-ID"],
 )
 
