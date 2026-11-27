@@ -93,10 +93,12 @@ MaanCamera/
 │   ├── 03_AI_ENGINEERING/       # Recommendation engine, safety, model selection
 │   ├── 04_SAAS/                 # Multi-tenancy, billing, subscriptions
 │   └── 08_COMPLIANCE/           # India DPDPA 2023, copyright, privacy
+├── infra/
+│   └── caddy/Caddyfile          # Production HTTPS reverse proxy routing /api/* & frontend
 ├── .env.example                 # Comprehensive environment variable blueprint
 ├── docker-compose.yml           # Full local multi-container orchestration stack
 ├── docker-compose.dev.yml       # Local development overrides
-├── docker-compose.prod.yml      # Hardened production stack (non-root, internal data tier)
+├── docker-compose.prod.yml      # Hardened production stack (Caddy TLS edge, internal data tier)
 ├── LICENSE                      # MIT License
 ├── LICENSE_POLICY.md            # Free & Open Source engineering governance
 ├── DEPENDENCY_ALLOWLIST.md      # Approved license criteria
@@ -129,7 +131,7 @@ cp .env.example .env
 docker compose up -d postgres valkey seaweedfs ollama
 ```
 
-*This spins up PostgreSQL 16 with pgvector on port 5432, Valkey 7.2 on port 6379, SeaweedFS S3 on port 8333, and Ollama on port 11434. For full containerized local runs, `docker compose up -d` also executes the `migrate` job (Alembic + seed) before booting backend, Celery worker, and frontend. Production deployments should use `docker compose -f docker-compose.prod.yml up -d`.*
+*This spins up PostgreSQL 16 with pgvector on port 5432, Valkey 7.2 on port 6379, SeaweedFS S3 on port 8333, and Ollama on port 11434. For full containerized local runs, `docker compose up -d` also executes the `migrate` job (Alembic + seed) before booting backend, Celery worker, and frontend. Production deployments should use `docker compose -f docker-compose.prod.yml up -d` (fronted exclusively by Caddy on ports 80/443 with `NEXT_PUBLIC_BACKEND_URL` & `NEXT_PUBLIC_S3_URL` baked at build time and `PAYMENT_PROVIDER=razorpay` or `bank_transfer`).*
 
 ### Step 3: Migrate, Seed, and Run the Modular Backend
 ```bash
@@ -184,7 +186,7 @@ Where:
 ## 8. India Regulatory & DPDPA 2023 Compliance
 - **Digital Personal Data Protection Act, 2023**: Purpose limitation, granular customer consent, and right to erasure.
 - **EXIF Sanitization**: Sensitive GPS coordinates and camera hardware serials stripped from public derivative assets.
-- **Strict Review Authenticity**: Reviews can ONLY be submitted by clients holding verified, completed bookings.
+- **Strict Review Authenticity**: Reviews can ONLY be submitted by clients holding verified, completed bookings and enter admin moderation (`pending`) before affecting public ratings.
 
 ---
 

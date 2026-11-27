@@ -125,9 +125,10 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     assert verify_res.status_code == 200
     assert verify_res.json()["data"]["payment_status"] == "captured"
 
-    # Also test idempotent webhook delivery with valid signature
+    # Also test idempotent webhook delivery with valid signature & body event name
     webhook_body = json.dumps({
         "id": f"evt_{uuid.uuid4().hex[:10]}",
+        "event": "payment.captured",
         "payload": {
             "payment": {
                 "entity": {
@@ -153,7 +154,12 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     assert b_check.status_code == 200
     assert b_check.json()["data"]["booking_status"] == "confirmed"
 
-    # 7. Update to in_progress & Complete Booking
+    # 7. Professional starts shoot (in_progress), Customer marks complete (customer_accepted)
+    await client.post(
+        "/auth/login",
+        json={"email": "pro@example.com", "password": "ProPass@2026!"},
+        headers=csrf_headers(client),
+    )
     patch_res = await client.patch(
         f"/bookings/{booking_id}/status",
         json={"booking_status": "in_progress"},
@@ -162,12 +168,21 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     assert patch_res.status_code == 200
     assert patch_res.json()["data"]["booking_status"] == "in_progress"
 
+    # Professional cannot self-complete on behalf of customer
+    pro_comp = await client.post(f"/bookings/{booking_id}/complete", headers=csrf_headers(client))
+    assert pro_comp.status_code == 403
+
+    await client.post(
+        "/auth/login",
+        json={"email": "customer@example.com", "password": "CustomerPass@2026!"},
+        headers=csrf_headers(client),
+    )
     comp_res = await client.post(f"/bookings/{booking_id}/complete", headers=csrf_headers(client))
     assert comp_res.status_code == 200
     assert comp_res.json()["data"]["booking_status"] == "completed"
     assert comp_res.json()["data"]["completion_status"] == "customer_accepted"
 
-    # 8. Submit Verified Review
+    # 8. Submit Verified Review -> starts pending until Admin moderates
     review_payload = {
         "overall_rating": 5.0,
         "work_quality_rating": 5.0,
@@ -178,7 +193,23 @@ async def test_full_marketplace_lifecycle(client: AsyncClient, seed_users):
     }
     rev_res = await client.post(f"/bookings/{booking_id}/review", json=review_payload, headers=csrf_headers(client))
     assert rev_res.status_code == 201
-    assert rev_res.json()["data"]["overall_rating"] == 5.0
+    rev_data = rev_res.json()["data"]
+    assert rev_data["overall_rating"] == 5.0
+    assert rev_data["moderation_status"] == "pending"
+
+    # Admin approves review so it publishes into profile reviews & AI summary
+    await client.post(
+        "/auth/login",
+        json={"email": "admin@example.com", "password": "AdminPass@2026!"},
+        headers=csrf_headers(client),
+    )
+    mod_res = await client.post(
+        f"/admin/reviews/{rev_data['id']}/moderate",
+        json={"decision": "approved", "notes": "Verified booking feedback"},
+        headers=csrf_headers(client),
+    )
+    assert mod_res.status_code == 200
+    assert mod_res.json()["data"]["moderation_status"] == "approved"
 
     # 9. AI Review Summary & AI Search
     sum_res = await client.post(

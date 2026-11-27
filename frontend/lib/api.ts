@@ -192,9 +192,10 @@ export const api = {
     });
   },
 
-  // Professionals
+  // Professionals & Portfolios
   getProfessional: (id: string) => apiFetch<any>(`/professionals/${id}`),
   getProfessionalReviews: (id: string) => apiFetch<any>(`/professionals/${id}/reviews`),
+  getMediaAccessUrl: (assetId: string) => apiFetch<any>(`/media/${assetId}/url`),
 
   // Enquiries & Quotations
   createEnquiry: (data: ApiSchemas["EnquiryCreateRequest"]) =>
@@ -202,12 +203,27 @@ export const api = {
   getMyEnquiries: () => apiFetch<any[]>("/enquiries/me"),
   acceptQuotation: (quotationId: string) => apiFetch<any>(`/quotations/${quotationId}/accept`, { method: "POST" }),
 
-  // Bookings & Payments
+  // Bookings, Payments & Reviews
   getMyBookings: () => apiFetch<any[]>("/bookings/me"),
   createPaymentOrder: (data: ApiSchemas["CreatePaymentOrderRequest"]) =>
     apiFetch<any>("/payments/create-order", { method: "POST", body: JSON.stringify(data) }),
   verifyPayment: (data: ApiSchemas["VerifyPaymentRequest"]) =>
     apiFetch<any>("/payments/verify", { method: "POST", body: JSON.stringify(data) }),
+  getBookingPayments: (bookingId: string) =>
+    apiFetch<any>(`/payments/bookings/${bookingId}`),
+  refundPayment: (paymentId: string, data: ApiSchemas["RefundRequest"]) =>
+    apiFetch<any>(`/payments/${paymentId}/refund`, { method: "POST", body: JSON.stringify(data) }),
   submitReview: (bookingId: string, review: ApiSchemas["ReviewCreateRequest"]) =>
     apiFetch<any>(`/bookings/${bookingId}/review`, { method: "POST", body: JSON.stringify(review) }),
+
+  // Admin Moderation
+  listModerationReviews: (params?: { moderation_status?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.moderation_status) query.set("moderation_status", params.moderation_status);
+    if (params?.limit) query.set("limit", params.limit.toString());
+    const suffix = query.toString();
+    return apiFetch<any>(suffix ? `/admin/reviews?${suffix}` : "/admin/reviews");
+  },
+  moderateReview: (reviewId: string, data: ApiSchemas["ReviewModerationRequest"]) =>
+    apiFetch<any>(`/admin/reviews/${reviewId}/moderate`, { method: "POST", body: JSON.stringify(data) }),
 };

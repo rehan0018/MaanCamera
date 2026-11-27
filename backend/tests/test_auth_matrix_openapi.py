@@ -81,6 +81,7 @@ SAMPLE_BODIES: dict[str, dict] = {
     "/api/v1/bookings/{id}/status": {"booking_status": "confirmed"},
     "/api/v1/bookings/{id}/cancel": {"cancellation_reason": "Plan changed"},
     "/api/v1/payments/create-order": {"booking_id": str(uuid.uuid4())},
+    "/api/v1/payments/{payment_id}/refund": {"amount_minor": 10000, "reason": "Cancellation refund"},
     "/api/v1/payments/verify": {
         "payment_id": str(uuid.uuid4()),
         "provider_payment_id": "pay_123",
@@ -95,6 +96,7 @@ SAMPLE_BODIES: dict[str, dict] = {
         "review_text": "Great experience working together!",
     },
     "/api/v1/reviews/{id}/report": {"reason": "spam"},
+    "/api/v1/admin/reviews/{id}/moderate": {"decision": "approved"},
     "/api/v1/search/ai": {"query": "Wedding photographer in Pune under 50k"},
     "/api/v1/ai/recommendations": {"query": "Wedding photographer in Pune under 50k"},
     "/api/v1/ai/portfolio/analyze": {"project_id": str(uuid.uuid4())},
@@ -109,9 +111,16 @@ SAMPLE_BODIES: dict[str, dict] = {
 
 def _materialize_url(path: str) -> str:
     dummy_id = str(uuid.uuid4())
-    url = path.replace("{id}", dummy_id).replace("{portfolio_id}", dummy_id).replace(
-        "{project_id}", dummy_id
-    ).replace("{session_id}", dummy_id).replace("{provider}", "razorpay")
+    url = (
+        path.replace("{id}", dummy_id)
+        .replace("{portfolio_id}", dummy_id)
+        .replace("{project_id}", dummy_id)
+        .replace("{session_id}", dummy_id)
+        .replace("{asset_id}", dummy_id)
+        .replace("{payment_id}", dummy_id)
+        .replace("{booking_id}", dummy_id)
+        .replace("{provider}", "razorpay")
+    )
     if url.startswith("/api/v1"):
         return url[len("/api/v1") :]
     return f"http://testserver{url}"

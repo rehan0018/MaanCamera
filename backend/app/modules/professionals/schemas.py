@@ -90,6 +90,7 @@ class ProfessionalProfileResponse(BaseModel):
     travel_available: bool
     verification_status: str
     profile_visibility: str
+    onboarding_completed: bool = False
     avg_rating: float
     total_reviews: int
     completed_bookings_count: int

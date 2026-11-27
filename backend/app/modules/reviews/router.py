@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.permissions import require_admin
 from app.core.responses import success_response
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
 from app.modules.reviews.schemas import (
     ContentReportRequest,
     ReviewCreateRequest,
+    ReviewModerationRequest,
     ReviewResponse,
 )
 from app.modules.reviews.service import ReviewService
@@ -57,3 +59,29 @@ async def report_review(
         data={"report_id": str(report.id), "status": report.status},
         status_code=status.HTTP_201_CREATED,
     )
+
+
+@router.get("/admin/reviews")
+async def list_moderation_reviews(
+    moderation_status: str = Query("pending", pattern="^(pending|approved|rejected|under_review|flagged|hidden)$"),
+    limit: int = Query(100, ge=1, le=200),
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    reviews = await ReviewService.list_reviews_for_moderation(
+        db, moderation_status=moderation_status, limit=limit
+    )
+    return success_response(
+        data=[ReviewResponse.model_validate(r).model_dump(mode="json") for r in reviews]
+    )
+
+
+@router.post("/admin/reviews/{id}/moderate")
+async def moderate_review(
+    id: uuid.UUID,
+    req: ReviewModerationRequest,
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    review = await ReviewService.moderate_review(db, id, admin_user, req)
+    return success_response(data=ReviewResponse.model_validate(review).model_dump(mode="json"))

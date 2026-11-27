@@ -7,7 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import ConflictException, ForbiddenException, NotFoundException
+from app.core.exceptions import (
+    BusinessRuleViolationException,
+    ConflictException,
+    ForbiddenException,
+    NotFoundException,
+)
 from app.modules.identity.models import User
 from app.modules.professionals.models import Category, ProfessionalProfile, Service
 from app.modules.professionals.schemas import (
@@ -19,7 +24,11 @@ from app.modules.professionals.schemas import (
 
 class ProfessionalService:
     @staticmethod
-    async def get_by_id_or_slug(db: AsyncSession, identifier: str) -> ProfessionalProfile:
+    async def get_by_id_or_slug(
+        db: AsyncSession,
+        identifier: str,
+        current_user: User | None = None,
+    ) -> ProfessionalProfile:
         stmt = (
             select(ProfessionalProfile)
             .options(
@@ -38,6 +47,10 @@ class ProfessionalService:
         prof = res.scalar_one_or_none()
         if not prof:
             raise NotFoundException("ProfessionalProfile", identifier)
+        if prof.profile_visibility == "private" and (
+            not current_user or (current_user.role != "admin" and prof.owner_user_id != current_user.id)
+        ):
+            raise ForbiddenException("This professional profile is currently private.")
         return prof
 
     @staticmethod
@@ -82,10 +95,14 @@ class ProfessionalService:
             state=req.state,
             service_radius_km=req.service_radius_km,
             travel_available=req.travel_available,
+            profile_visibility="private",
+            onboarding_completed=False,
         )
         db.add(profile)
         await db.flush()
-        return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
+        return await ProfessionalService.get_by_id_or_slug(
+            db, str(profile.id), current_user=await db.get(User, user_id)
+        )
 
     @staticmethod
     async def update_profile(
@@ -104,11 +121,15 @@ class ProfessionalService:
             raise ForbiddenException("You do not have permission to update this professional profile.")
 
         updates = req.model_dump(exclude_unset=True)
+        if updates.get("profile_visibility") == "public" and not profile.onboarding_completed:
+            raise BusinessRuleViolationException(
+                "Add at least one active service before making your profile public."
+            )
         for field, value in updates.items():
             setattr(profile, field, value)
 
         await db.flush()
-        return await ProfessionalService.get_by_id_or_slug(db, str(profile.id))
+        return await ProfessionalService.get_by_id_or_slug(db, str(profile.id), current_user=current_user)
 
     @staticmethod
     async def delete_profile(
@@ -154,6 +175,10 @@ class ProfessionalService:
             is_active=True,
         )
         db.add(service)
+        if not profile.onboarding_completed:
+            profile.onboarding_completed = True
+            if profile.profile_visibility == "private":
+                profile.profile_visibility = "public"
         await db.flush()
         stmt = select(Service).options(selectinload(Service.packages)).where(Service.id == service.id)
         res = await db.execute(stmt)

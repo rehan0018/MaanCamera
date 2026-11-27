@@ -28,7 +28,7 @@ class Review(Base, TimestampMixin):
     punctuality_rating: Mapped[float] = mapped_column(Numeric(2, 1), nullable=False)
     value_rating: Mapped[float] = mapped_column(Numeric(2, 1), nullable=False)
     review_text: Mapped[str] = mapped_column(Text, nullable=False)
-    moderation_status: Mapped[str] = mapped_column(String(30), default="approved", nullable=False)
+    moderation_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
 
     __table_args__ = (
         CheckConstraint("overall_rating >= 1.0 AND overall_rating <= 5.0", name="ck_reviews_overall_rating"),
@@ -37,7 +37,7 @@ class Review(Base, TimestampMixin):
         CheckConstraint("punctuality_rating >= 1.0 AND punctuality_rating <= 5.0", name="ck_reviews_punctuality"),
         CheckConstraint("value_rating >= 1.0 AND value_rating <= 5.0", name="ck_reviews_value"),
         CheckConstraint(
-            "moderation_status IN ('pending', 'approved', 'flagged', 'hidden')",
+            "moderation_status IN ('pending', 'approved', 'rejected', 'under_review', 'flagged', 'hidden')",
             name="ck_reviews_moderation_status",
         ),
     )

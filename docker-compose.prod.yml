@@ -64,9 +64,9 @@ services:
       - APP_DB_USER=${APP_DB_USER:-maancamera_app}
       - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
-      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
-      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
-      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
       - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     depends_on:
@@ -81,9 +81,9 @@ services:
       dockerfile: Dockerfile
     user: "1000:1000"
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-127.0.0.1}"
-    ports:
-      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-172.16.0.0/12,127.0.0.1}"
+    expose:
+      - "8000"
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
@@ -93,9 +93,9 @@ services:
       - APP_DB_USER=${APP_DB_USER:-maancamera_app}
       - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
-      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
-      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
-      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
       - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://valkey:6379/0
@@ -134,9 +134,9 @@ services:
       - APP_DB_USER=${APP_DB_USER:-maancamera_app}
       - APP_DB_PASSWORD=${APP_DB_PASSWORD:?APP_DB_PASSWORD is required}
       - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-razorpay}
-      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:?RAZORPAY_KEY_ID is required}
-      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:?RAZORPAY_KEY_SECRET is required}
-      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:?RAZORPAY_WEBHOOK_SECRET is required}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
       - DATABASE_URL=postgresql+asyncpg://${APP_DB_USER:-maancamera_app}:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - SYNC_DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - CELERY_BROKER_URL=redis://valkey:6379/1
@@ -158,10 +158,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:?NEXT_PUBLIC_BACKEND_URL is required}
+        NEXT_PUBLIC_S3_URL: ${S3_PUBLIC_ENDPOINT_URL:?S3_PUBLIC_ENDPOINT_URL is required}
     user: "1001:1001"
     restart: always
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:?NEXT_PUBLIC_BACKEND_URL is required}
@@ -177,14 +180,37 @@ services:
     networks:
       - maancamera_edge
 
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - APP_DOMAIN=${APP_DOMAIN:?APP_DOMAIN is required}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    networks:
+      - maancamera_edge
+
 volumes:
   postgres_prod_data:
   valkey_prod_data:
   seaweedfs_prod_data:
   ollama_prod_models:
+  caddy_data:
+  caddy_config:
 
 networks:
   maancamera_internal:
     driver: bridge
+    internal: true
   maancamera_edge:
     driver: bridge

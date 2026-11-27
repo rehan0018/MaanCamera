@@ -56,11 +56,12 @@ def get_user_or_ip_key(request: Request) -> str:
 
 
 storage_uri = settings.RATE_LIMIT_STORAGE_URI or settings.REDIS_URL
+_allow_memory_fallback = settings.ENVIRONMENT != "production" or not settings.RATE_LIMIT_FAIL_CLOSED
 
 limiter = Limiter(
     key_func=get_client_ip,
     storage_uri=storage_uri,
     enabled=settings.RATE_LIMIT_ENABLED,
     headers_enabled=True,
-    in_memory_fallback_enabled=True,
+    in_memory_fallback_enabled=_allow_memory_fallback,
 )

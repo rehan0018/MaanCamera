@@ -52,7 +52,7 @@ class UserResponse(BaseModel):
 
 class AuthResponseData(BaseModel):
     user: UserResponse
-    session_token: str
+    csrf_token: str
 
 
 class EmailVerifyConfirmRequest(BaseModel):

@@ -1,4 +1,4 @@
-"""Portfolio and Media upload service layer."""
+"""Portfolio and Media upload service layer enforcing visibility and ownership isolation."""
 
 import contextlib
 import os
@@ -20,7 +20,9 @@ from app.modules.identity.models import User
 from app.modules.portfolios.models import MediaAsset, Portfolio, Project
 from app.modules.portfolios.schemas import (
     CompleteMediaUploadRequest,
+    MediaReadUrlResponse,
     ProjectCreateRequest,
+    ProjectResponse,
     UploadUrlRequest,
     UploadUrlResponse,
 )
@@ -28,33 +30,82 @@ from app.modules.professionals.models import ProfessionalProfile
 from app.workers.celery_app import process_uploaded_media
 
 
+async def _is_portfolio_owner_or_admin(
+    db: AsyncSession, portfolio: Portfolio, current_user: User | None
+) -> bool:
+    if not current_user:
+        return False
+    if current_user.role == "admin":
+        return True
+    prof = await db.get(ProfessionalProfile, portfolio.professional_id)
+    return bool(prof and prof.owner_user_id == current_user.id)
+
+
+def _to_project_response(project: Project, is_privileged: bool) -> ProjectResponse:
+    """Serialize a Project ORM object without mutating tracked relationship collections."""
+    resp = ProjectResponse.model_validate(project)
+    if not is_privileged:
+        resp.media_assets = [asset for asset in resp.media_assets if asset.visibility == "public"]
+    return resp
+
+
 class PortfolioService:
     @staticmethod
-    async def get_projects_by_portfolio(db: AsyncSession, portfolio_id: uuid.UUID) -> list[Project]:
+    async def get_projects_by_portfolio(
+        db: AsyncSession,
+        portfolio_id: uuid.UUID,
+        current_user: User | None = None,
+    ) -> list[ProjectResponse]:
+        portfolio = await db.get(Portfolio, portfolio_id)
+        if not portfolio:
+            raise NotFoundException("Portfolio", portfolio_id)
+
+        is_privileged = await _is_portfolio_owner_or_admin(db, portfolio, current_user)
+        if not is_privileged and portfolio.visibility == "private":
+            raise ForbiddenException("You do not have permission to view this private portfolio.")
+
         stmt = (
             select(Project)
             .options(selectinload(Project.media_assets))
             .where(Project.portfolio_id == portfolio_id)
             .order_by(Project.created_at.desc())
         )
+        if not is_privileged:
+            stmt = stmt.where(Project.publication_status == "published")
+
         res = await db.execute(stmt)
-        return list(res.scalars().all())
+        projects = list(res.scalars().all())
+        return [_to_project_response(proj, is_privileged) for proj in projects]
 
     @staticmethod
-    async def get_project_by_id(db: AsyncSession, project_id: uuid.UUID) -> Project:
+    async def get_project_by_id(
+        db: AsyncSession,
+        project_id: uuid.UUID,
+        current_user: User | None = None,
+    ) -> ProjectResponse:
         stmt = (
             select(Project)
-            .options(selectinload(Project.media_assets))
+            .options(selectinload(Project.media_assets), selectinload(Project.portfolio))
             .where(Project.id == project_id)
         )
         res = await db.execute(stmt)
         proj = res.scalar_one_or_none()
         if not proj:
             raise NotFoundException("Project", project_id)
-        return proj
+
+        is_privileged = await _is_portfolio_owner_or_admin(db, proj.portfolio, current_user)
+        if not is_privileged:
+            if proj.portfolio.visibility == "private":
+                raise ForbiddenException("This portfolio is private.")
+            if proj.publication_status != "published":
+                raise ForbiddenException("This project is not publicly published.")
+
+        return _to_project_response(proj, is_privileged)
 
     @staticmethod
-    async def create_project(db: AsyncSession, current_user: User, req: ProjectCreateRequest) -> Project:
+    async def create_project(
+        db: AsyncSession, current_user: User, req: ProjectCreateRequest
+    ) -> ProjectResponse:
         portfolio = await db.get(Portfolio, req.portfolio_id)
         if not portfolio:
             raise NotFoundException("Portfolio", req.portfolio_id)
@@ -81,7 +132,7 @@ class PortfolioService:
         )
         db.add(project)
         await db.flush()
-        return await PortfolioService.get_project_by_id(db, project.id)
+        return await PortfolioService.get_project_by_id(db, project.id, current_user=current_user)
 
     @staticmethod
     async def generate_upload_url(current_user: User, req: UploadUrlRequest) -> UploadUrlResponse:
@@ -105,9 +156,12 @@ class PortfolioService:
         if not project:
             raise NotFoundException("Project", req.project_id)
 
+        portfolio = await db.get(Portfolio, project.portfolio_id)
+        if not portfolio:
+            raise NotFoundException("Portfolio", project.portfolio_id)
+
         if current_user.role != "admin":
-            portfolio = await db.get(Portfolio, project.portfolio_id)
-            prof = await db.get(ProfessionalProfile, portfolio.professional_id) if portfolio else None
+            prof = await db.get(ProfessionalProfile, portfolio.professional_id)
             if not prof or prof.owner_user_id != current_user.id:
                 raise ForbiddenException("You do not have permission to add media to this project.")
 
@@ -119,10 +173,23 @@ class PortfolioService:
             ):
                 raise BusinessRuleViolationException("Invalid upload storage key ownership prefix.")
 
+        if req.storage_key.startswith("private/"):
+            resolved_visibility = "private"
+        elif req.storage_key.startswith("public/"):
+            resolved_visibility = "public"
+        else:
+            raise BusinessRuleViolationException("Upload storage key must reside under public/ or private/ prefix.")
+
+        if req.visibility and req.visibility != resolved_visibility:
+            raise BusinessRuleViolationException(
+                "Declared asset visibility does not match storage key prefix."
+            )
+
         asset = MediaAsset(
             project_id=req.project_id,
             storage_key=req.storage_key,
-            public_url=None,  # Worker publishes public WebP URL after Pillow verification & EXIF stripping
+            public_url=None,  # Worker publishes public WebP URL strictly for public assets after sanitization
+            visibility=resolved_visibility,
             media_type=req.media_type,
             mime_type=req.mime_type,
             file_size_bytes=req.file_size_bytes,
@@ -134,13 +201,11 @@ class PortfolioService:
         db.add(asset)
         await db.flush()
 
-        if not project.cover_asset_id:
+        if resolved_visibility == "public" and not project.cover_asset_id:
             project.cover_asset_id = asset.id
             await db.flush()
 
-        await db.flush()
-
-        # Enqueue async Pillow validation + EXIF stripping + WebP generation strictly after commit
+        # Enqueue async Pillow validation + EXIF stripping + visibility-aware WebP storage after commit
         asset_id_str = str(asset.id)
         asset_storage_key = asset.storage_key
 
@@ -151,3 +216,49 @@ class PortfolioService:
         register_after_commit(db, _dispatch_media_job)
 
         return asset
+
+    @staticmethod
+    async def get_authorized_media_url(
+        db: AsyncSession, asset_id: uuid.UUID, current_user: User
+    ) -> MediaReadUrlResponse:
+        asset = await db.get(MediaAsset, asset_id)
+        if not asset:
+            raise NotFoundException("MediaAsset", asset_id)
+
+        project = await db.get(Project, asset.project_id)
+        if not project:
+            raise NotFoundException("Project", asset.project_id)
+
+        portfolio = await db.get(Portfolio, project.portfolio_id)
+        if not portfolio:
+            raise NotFoundException("Portfolio", project.portfolio_id)
+
+        is_privileged = await _is_portfolio_owner_or_admin(db, portfolio, current_user)
+        if asset.visibility == "private" and not is_privileged:
+            raise ForbiddenException("You do not have permission to access this private media asset.")
+
+        if asset.visibility == "public":
+            if not is_privileged and (
+                portfolio.visibility == "private" or project.publication_status != "published"
+            ):
+                raise ForbiddenException("This media asset is not publicly available.")
+            if asset.public_url:
+                return MediaReadUrlResponse(
+                    asset_id=asset.id,
+                    url=asset.public_url,
+                    visibility="public",
+                    expires_in_seconds=None,
+                )
+
+        expires_in = 300
+        signed_url = await storage_service.generate_presigned_download_url(
+            asset.storage_key,
+            is_public=(asset.visibility == "public"),
+            expires_in=expires_in,
+        )
+        return MediaReadUrlResponse(
+            asset_id=asset.id,
+            url=signed_url,
+            visibility=asset.visibility,
+            expires_in_seconds=expires_in,
+        )

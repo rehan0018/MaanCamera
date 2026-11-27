@@ -85,3 +85,37 @@ class Refund(Base):
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'processed', 'failed')", name="ck_refunds_status"),
     )
+
+
+class PaymentLedgerEntry(Base):
+    """Append-only financial ledger recording payment captures, fees, holds, and refunds."""
+
+    __tablename__ = "payment_ledger_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bookings.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    refund_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("refunds.id", ondelete="SET NULL"), nullable=True
+    )
+    entry_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), default="INR", nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('payment_captured', 'platform_commission', 'professional_payable', 'payout_hold', 'payout_released', 'refund_issued')",
+            name="ck_ledger_entry_type",
+        ),
+        CheckConstraint("direction IN ('credit', 'debit')", name="ck_ledger_direction"),
+        CheckConstraint("amount_minor > 0", name="ck_ledger_amount_positive"),
+    )

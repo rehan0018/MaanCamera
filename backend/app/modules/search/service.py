@@ -32,7 +32,10 @@ class SearchService:
         query = (
             select(ProfessionalProfile, price_subq.c.min_price)
             .outerjoin(price_subq, price_subq.c.professional_id == ProfessionalProfile.id)
-            .where(ProfessionalProfile.profile_visibility == "public")
+            .where(
+                ProfessionalProfile.profile_visibility == "public",
+                ProfessionalProfile.onboarding_completed.is_(True),
+            )
         )
 
         if params.city:

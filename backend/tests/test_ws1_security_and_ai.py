@@ -70,7 +70,9 @@ async def test_s2_email_verify_phone_otp_and_password_reset_flow(client: AsyncCl
         json={"email": "meera@example.com", "password": "StrongPass@2026!"},
     )
     assert login_res.status_code == 200
-    old_session_token = login_res.json()["data"]["session_token"]
+    assert "session_token" not in login_res.json()["data"]
+    old_mc_cookie = login_res.cookies.get("mc_session")
+    assert old_mc_cookie
 
     otp_req = await client.post(
         "/auth/verify-phone/request",
@@ -121,10 +123,12 @@ async def test_s2_email_verify_phone_otp_and_password_reset_flow(client: AsyncCl
     changed_alerts = [m for m in get_test_outbox() if m["event_type"] == "password_changed"]
     assert len(changed_alerts) == 1
 
-    # Old session token must now be invalid
+    # Old HttpOnly cookie must now be invalid
     client.cookies.clear()
-    stale_me = await client.get("/users/me", headers={"Authorization": f"Bearer {old_session_token}"})
+    client.cookies.set("mc_session", old_mc_cookie)
+    stale_me = await client.get("/users/me")
     assert stale_me.status_code == 401
+    client.cookies.clear()
 
     # New password works cleanly
     new_login = await client.post(
@@ -142,12 +146,14 @@ async def test_s6_account_lockout_totp_refresh_and_device_revocation(client: Asy
         json={"email": "admin@example.com", "password": "AdminPass@2026!"},
     )
     assert login_res.status_code == 200
+    initial_cookie = login_res.cookies.get("mc_session")
 
-    # Session refresh rotates token & preserves authentication
+    # Session refresh rotates HttpOnly cookie without exposing raw token in JSON
     refresh_res = await client.post("/auth/refresh", headers=csrf_headers(client))
     assert refresh_res.status_code == 200
-    rotated_token = refresh_res.json()["data"]["session_token"]
-    assert rotated_token != login_res.json()["data"]["session_token"]
+    assert "session_token" not in refresh_res.json()["data"]
+    rotated_cookie = refresh_res.cookies.get("mc_session")
+    assert rotated_cookie and rotated_cookie != initial_cookie
 
     sessions_res = await client.get("/auth/sessions")
     assert sessions_res.status_code == 200

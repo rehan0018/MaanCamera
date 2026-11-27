@@ -703,6 +703,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/{asset_id}/url:
+    get:
+      tags:
+      - Portfolios & Media
+      summary: Get Media Access Url
+      operationId: get_media_access_url_api_v1_media__asset_id__url_get
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/search/professionals:
     get:
       tags:
@@ -1066,12 +1092,21 @@ paths:
       - Payments
       summary: Create Payment Order
       operationId: create_payment_order_api_v1_payments_create_order_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CreatePaymentOrderRequest'
-        required: true
       responses:
         '201':
           description: Successful Response
@@ -1096,6 +1131,64 @@ paths:
             schema:
               $ref: '#/components/schemas/VerifyPaymentRequest'
         required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/{payment_id}/refund:
+    post:
+      tags:
+      - Payments
+      summary: Refund Payment
+      operationId: refund_payment_api_v1_payments__payment_id__refund_post
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/bookings/{booking_id}:
+    get:
+      tags:
+      - Payments
+      summary: Get Booking Payments
+      operationId: get_booking_payments_api_v1_payments_bookings__booking_id__get
+      parameters:
+      - name: booking_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Booking Id
       responses:
         '200':
           description: Successful Response
@@ -1222,6 +1315,74 @@ paths:
               $ref: '#/components/schemas/ContentReportRequest'
       responses:
         '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/reviews:
+    get:
+      tags:
+      - Reviews
+      summary: List Moderation Reviews
+      operationId: list_moderation_reviews_api_v1_admin_reviews_get
+      parameters:
+      - name: moderation_status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(pending|approved|rejected|under_review|flagged|hidden)$
+          default: pending
+          title: Moderation Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/reviews/{id}/moderate:
+    post:
+      tags:
+      - Reviews
+      summary: Moderate Review
+      operationId: moderate_review_api_v1_admin_reviews__id__moderate_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewModerationRequest'
+      responses:
+        '200':
           description: Successful Response
           content:
             application/json:
@@ -1376,6 +1537,12 @@ components:
           maxLength: 500
           minLength: 5
           title: Storage Key
+        visibility:
+          anyOf:
+          - type: string
+            pattern: ^(public|private)$
+          - type: 'null'
+          title: Visibility
         media_type:
           type: string
           pattern: ^image$
@@ -1425,7 +1592,6 @@ components:
         details:
           anyOf:
           - type: string
-            maxLength: 1000
           - type: 'null'
           title: Details
       type: object
@@ -1890,6 +2056,22 @@ components:
       - total_amount_minor
       - scope_of_work
       title: QuotationRevisionRequest
+    RefundRequest:
+      properties:
+        amount_minor:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Amount Minor
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 5
+          title: Reason
+      type: object
+      required:
+      - amount_minor
+      - reason
+      title: RefundRequest
     ReviewCreateRequest:
       properties:
         overall_rating:
@@ -1931,6 +2113,26 @@ components:
       - value_rating
       - review_text
       title: ReviewCreateRequest
+    ReviewModerationRequest:
+      properties:
+        decision:
+          type: string
+          enum:
+          - approved
+          - rejected
+          - under_review
+          - hidden
+          title: Decision
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Notes
+      type: object
+      required:
+      - decision
+      title: ReviewModerationRequest
     ReviewSummaryRequest:
       properties:
         professional_id:

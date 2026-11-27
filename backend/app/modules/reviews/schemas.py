@@ -1,9 +1,10 @@
-"""Schemas for Reviews and Reports."""
+"""Schemas for booking reviews and admin content moderation."""
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReviewCreateRequest(BaseModel):
@@ -16,6 +17,8 @@ class ReviewCreateRequest(BaseModel):
 
 
 class ReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     booking_id: uuid.UUID
     customer_id: uuid.UUID
@@ -29,10 +32,12 @@ class ReviewResponse(BaseModel):
     moderation_status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 
 class ContentReportRequest(BaseModel):
     reason: str = Field(..., min_length=3, max_length=100)
-    details: str | None = Field(None, max_length=1000)
+    details: str | None = None
+
+
+class ReviewModerationRequest(BaseModel):
+    decision: Literal["approved", "rejected", "under_review", "hidden"]
+    notes: str | None = Field(default=None, max_length=500)

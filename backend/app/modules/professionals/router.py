@@ -10,7 +10,7 @@ from app.core.exceptions import NotFoundException
 from app.core.permissions import require_professional
 from app.core.responses import success_response
 from app.modules.identity.models import User
-from app.modules.identity.router import get_current_user
+from app.modules.identity.router import get_current_user, get_optional_current_user
 from app.modules.professionals.schemas import (
     CategoryResponse,
     ProfessionalProfileResponse,
@@ -74,8 +74,12 @@ async def create_my_service(
 
 
 @router.get("/professionals/{id}")
-async def get_professional(id: str, db: AsyncSession = Depends(get_db)):
-    profile = await ProfessionalService.get_by_id_or_slug(db, id)
+async def get_professional(
+    id: str,
+    current_user: User | None = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await ProfessionalService.get_by_id_or_slug(db, id, current_user=current_user)
     return success_response(
         data=ProfessionalProfileResponse.model_validate(profile).model_dump(mode="json")
     )

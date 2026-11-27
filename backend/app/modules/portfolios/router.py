@@ -8,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.identity.models import User
-from app.modules.identity.router import get_current_user
+from app.modules.identity.router import get_current_user, get_optional_current_user
 from app.modules.portfolios.schemas import (
     CompleteMediaUploadRequest,
     MediaAssetResponse,
     ProjectCreateRequest,
-    ProjectResponse,
     UploadUrlRequest,
 )
 from app.modules.portfolios.service import PortfolioService
@@ -22,19 +21,25 @@ router = APIRouter(prefix="", tags=["Portfolios & Media"])
 
 
 @router.get("/portfolios/{portfolio_id}/projects")
-async def get_projects(portfolio_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    projects = await PortfolioService.get_projects_by_portfolio(db, portfolio_id)
-    return success_response(
-        data=[ProjectResponse.model_validate(p).model_dump(mode="json") for p in projects]
+async def get_projects(
+    portfolio_id: uuid.UUID,
+    current_user: User | None = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    projects = await PortfolioService.get_projects_by_portfolio(
+        db, portfolio_id, current_user=current_user
     )
+    return success_response(data=[p.model_dump(mode="json") for p in projects])
 
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    project = await PortfolioService.get_project_by_id(db, project_id)
-    return success_response(
-        data=ProjectResponse.model_validate(project).model_dump(mode="json")
-    )
+async def get_project(
+    project_id: uuid.UUID,
+    current_user: User | None = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await PortfolioService.get_project_by_id(db, project_id, current_user=current_user)
+    return success_response(data=project.model_dump(mode="json"))
 
 
 @router.post("/projects", status_code=status.HTTP_201_CREATED)
@@ -45,7 +50,7 @@ async def create_project(
 ):
     project = await PortfolioService.create_project(db, current_user, req)
     return success_response(
-        data=ProjectResponse.model_validate(project).model_dump(mode="json"),
+        data=project.model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
     )
 
@@ -69,3 +74,13 @@ async def complete_upload(
     return success_response(
         data=MediaAssetResponse.model_validate(asset).model_dump(mode="json")
     )
+
+
+@router.get("/media/{asset_id}/url")
+async def get_media_access_url(
+    asset_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await PortfolioService.get_authorized_media_url(db, asset_id, current_user)
+    return success_response(data=res.model_dump(mode="json"))

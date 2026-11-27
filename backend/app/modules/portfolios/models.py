@@ -91,6 +91,7 @@ class MediaAsset(Base):
     )
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
     public_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="public", nullable=False)
     media_type: Mapped[str] = mapped_column(String(20), default="image", nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -108,6 +109,7 @@ class MediaAsset(Base):
     project = relationship("Project", back_populates="media_assets", foreign_keys=[project_id])
 
     __table_args__ = (
+        CheckConstraint("visibility IN ('public', 'private')", name="ck_media_assets_visibility"),
         CheckConstraint("media_type IN ('image', 'video')", name="ck_media_assets_type"),
         CheckConstraint(
             "processing_status IN ('pending', 'processing', 'completed', 'failed')",

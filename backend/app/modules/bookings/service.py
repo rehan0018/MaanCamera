@@ -1,4 +1,4 @@
-"""Booking business logic and transition state machine."""
+"""Booking business logic, actor-enforced state machine, and audit logging."""
 
 import uuid
 
@@ -8,17 +8,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BusinessRuleViolationException, ForbiddenException, NotFoundException
 from app.modules.bookings.models import Booking
 from app.modules.identity.models import User
+from app.modules.platform.models import AuditLog
 from app.modules.professionals.models import ProfessionalProfile
+from app.modules.quotations.models import Quotation
 
-# Valid state machine transitions
-ALLOWED_TRANSITIONS = {
-    "pending_payment": ["confirmed", "cancelled"],
-    "confirmed": ["in_progress", "completed", "cancelled"],
-    "in_progress": ["completed", "cancelled"],
-    "completed": ["disputed"],
-    "cancelled": [],
-    "disputed": ["cancelled", "completed"],
+# Allowed transitions keyed by (current_status, target_status) -> allowed booking actor roles
+TRANSITION_ROLES: dict[tuple[str, str], set[str]] = {
+    ("pending_payment", "confirmed"): {"admin"},  # Normally confirmed via payment capture/webhook
+    ("pending_payment", "cancelled"): {"customer", "professional", "admin"},
+    ("confirmed", "in_progress"): {"professional", "admin"},
+    ("confirmed", "cancelled"): {"customer", "professional", "admin"},
+    ("confirmed", "disputed"): {"customer", "professional", "admin"},
+    ("in_progress", "completed"): {"customer", "admin"},
+    ("in_progress", "cancelled"): {"customer", "professional", "admin"},
+    ("in_progress", "disputed"): {"customer", "professional", "admin"},
+    ("completed", "disputed"): {"customer", "professional", "admin"},
+    ("disputed", "completed"): {"admin"},
+    ("disputed", "cancelled"): {"admin"},
 }
+
+
+async def _resolve_booking_actor(db: AsyncSession, booking: Booking, user: User) -> str:
+    """Resolve user's exact authority on this booking ('admin', 'customer', 'professional')."""
+    if user.role == "admin":
+        return "admin"
+    if booking.customer_id == user.id:
+        return "customer"
+    prof_stmt = select(ProfessionalProfile.id).where(
+        ProfessionalProfile.id == booking.professional_id,
+        ProfessionalProfile.owner_user_id == user.id,
+    )
+    if (await db.execute(prof_stmt)).scalar_one_or_none():
+        return "professional"
+    raise ForbiddenException("You do not have permission to access or modify this booking.")
 
 
 class BookingService:
@@ -27,21 +49,12 @@ class BookingService:
         db: AsyncSession, booking_id: uuid.UUID, current_user: User | None = None
     ) -> Booking:
         stmt = select(Booking).where(Booking.id == booking_id)
-        res = await db.execute(stmt)
-        booking = res.scalar_one_or_none()
+        booking = (await db.execute(stmt)).scalar_one_or_none()
         if not booking:
             raise NotFoundException("Booking", booking_id)
 
-        if current_user and current_user.role != "admin" and booking.customer_id != current_user.id:
-            # Check if current_user owns the professional profile
-            prof_stmt = select(ProfessionalProfile).where(
-                ProfessionalProfile.id == booking.professional_id,
-                ProfessionalProfile.owner_user_id == current_user.id,
-            )
-            prof_res = await db.execute(prof_stmt)
-            if not prof_res.scalar_one_or_none():
-                raise ForbiddenException("You do not have permission to view this booking.")
-
+        if current_user:
+            await _resolve_booking_actor(db, booking, current_user)
         return booking
 
     @staticmethod
@@ -50,33 +63,63 @@ class BookingService:
             stmt = select(Booking).order_by(desc(Booking.created_at))
         elif user.role == "professional":
             prof_stmt = select(ProfessionalProfile.id).where(ProfessionalProfile.owner_user_id == user.id)
-            prof_res = await db.execute(prof_stmt)
-            prof_ids = list(prof_res.scalars().all())
-            stmt = select(Booking).where(
-                (Booking.customer_id == user.id) | (Booking.professional_id.in_(prof_ids))
-            ).order_by(desc(Booking.created_at))
+            prof_ids = list((await db.execute(prof_stmt)).scalars().all())
+            stmt = (
+                select(Booking)
+                .where((Booking.customer_id == user.id) | (Booking.professional_id.in_(prof_ids)))
+                .order_by(desc(Booking.created_at))
+            )
         else:
             stmt = select(Booking).where(Booking.customer_id == user.id).order_by(desc(Booking.created_at))
 
-        res = await db.execute(stmt)
-        return list(res.scalars().all())
+        return list((await db.execute(stmt)).scalars().all())
+
+    @staticmethod
+    async def _check_payment_preconditions(db: AsyncSession, booking: Booking) -> None:
+        if booking.quotation_id:
+            quot = await db.get(Quotation, booking.quotation_id)
+            if quot and quot.advance_amount_minor > 0 and (booking.paid_amount_minor or 0) < quot.advance_amount_minor:
+                raise BusinessRuleViolationException(
+                    "Required advance payment must be captured before starting or completing this booking."
+                )
 
     @staticmethod
     async def update_status(
         db: AsyncSession, booking_id: uuid.UUID, new_status: str, current_user: User
     ) -> Booking:
-        booking = await BookingService.get_booking_by_id(db, booking_id, current_user)
-        current = booking.booking_status
-
         if new_status == "completed":
             return await BookingService.complete_booking(db, booking_id, current_user)
 
-        if new_status not in ALLOWED_TRANSITIONS.get(current, []):
+        stmt = select(Booking).where(Booking.id == booking_id).with_for_update()
+        booking = (await db.execute(stmt)).scalar_one_or_none()
+        if not booking:
+            raise NotFoundException("Booking", booking_id)
+
+        actor = await _resolve_booking_actor(db, booking, current_user)
+        current = booking.booking_status
+        allowed_actors = TRANSITION_ROLES.get((current, new_status))
+        if not allowed_actors:
             raise BusinessRuleViolationException(
                 f"Invalid booking transition from '{current}' to '{new_status}'."
             )
+        if actor not in allowed_actors:
+            raise ForbiddenException(
+                f"Role '{actor}' is not permitted to transition booking from '{current}' to '{new_status}'."
+            )
+
+        if new_status == "in_progress":
+            await BookingService._check_payment_preconditions(db, booking)
 
         booking.booking_status = new_status
+        db.add(
+            AuditLog(
+                actor_user_id=current_user.id,
+                action="booking_status_changed",
+                resource_type="booking",
+                resource_id=booking.id,
+                metadata_payload={"from": current, "to": new_status, "actor": actor},
+            )
+        )
         await db.flush()
         return booking
 
@@ -84,21 +127,37 @@ class BookingService:
     async def complete_booking(
         db: AsyncSession, booking_id: uuid.UUID, current_user: User
     ) -> Booking:
-        booking = await BookingService.get_booking_by_id(db, booking_id)
-        if current_user.role != "admin" and booking.customer_id != current_user.id:
+        stmt = select(Booking).where(Booking.id == booking_id).with_for_update()
+        booking = (await db.execute(stmt)).scalar_one_or_none()
+        if not booking:
+            raise NotFoundException("Booking", booking_id)
+
+        actor = await _resolve_booking_actor(db, booking, current_user)
+        if actor not in {"customer", "admin"}:
             raise ForbiddenException("Only the booking customer or admin may mark a booking complete.")
 
-        if booking.booking_status not in ["confirmed", "in_progress"]:
+        previous_status = booking.booking_status
+        if previous_status not in ["confirmed", "in_progress"]:
             raise BusinessRuleViolationException("Only confirmed or in-progress bookings can be completed.")
+
+        await BookingService._check_payment_preconditions(db, booking)
 
         booking.booking_status = "completed"
         booking.completion_status = "customer_accepted"
 
-        # Increment completed bookings count on professional profile
         prof = await db.get(ProfessionalProfile, booking.professional_id)
         if prof:
             prof.completed_bookings_count = (prof.completed_bookings_count or 0) + 1
 
+        db.add(
+            AuditLog(
+                actor_user_id=current_user.id,
+                action="booking_completed",
+                resource_type="booking",
+                resource_id=booking.id,
+                metadata_payload={"from": previous_status, "to": "completed", "actor": actor},
+            )
+        )
         await db.flush()
         return booking
 
@@ -106,11 +165,36 @@ class BookingService:
     async def cancel_booking(
         db: AsyncSession, booking_id: uuid.UUID, reason: str, current_user: User
     ) -> Booking:
-        booking = await BookingService.get_booking_by_id(db, booking_id, current_user)
-        if booking.booking_status == "completed":
-            raise BusinessRuleViolationException("Completed bookings cannot be cancelled.")
+        stmt = select(Booking).where(Booking.id == booking_id).with_for_update()
+        booking = (await db.execute(stmt)).scalar_one_or_none()
+        if not booking:
+            raise NotFoundException("Booking", booking_id)
+
+        actor = await _resolve_booking_actor(db, booking, current_user)
+        previous_status = booking.booking_status
+        allowed_actors = TRANSITION_ROLES.get((previous_status, "cancelled"))
+        if not allowed_actors:
+            raise BusinessRuleViolationException(
+                f"Bookings in status '{previous_status}' cannot be cancelled."
+            )
+        if actor not in allowed_actors:
+            raise ForbiddenException("You do not have permission to cancel this booking.")
 
         booking.booking_status = "cancelled"
         booking.cancellation_reason = reason
+        db.add(
+            AuditLog(
+                actor_user_id=current_user.id,
+                action="booking_cancelled",
+                resource_type="booking",
+                resource_id=booking.id,
+                metadata_payload={
+                    "from": previous_status,
+                    "to": "cancelled",
+                    "actor": actor,
+                    "reason": reason,
+                },
+            )
+        )
         await db.flush()
         return booking

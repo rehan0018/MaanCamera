@@ -228,6 +228,7 @@ async def seed_users(db_session: AsyncSession) -> dict[str, Any]:
         total_reviews=25,
         verification_status="verified",
         profile_visibility="public",
+        onboarding_completed=True,
         travel_available=True,
     )
     db_session.add(prof_profile)

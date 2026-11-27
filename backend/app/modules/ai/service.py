@@ -114,7 +114,10 @@ class AIService:
         target_cats = [c.lower() for c in requirements.get("category", [])]
 
         # Stage 1: Eligibility Filtering
-        stmt = select(ProfessionalProfile).where(ProfessionalProfile.profile_visibility == "public")
+        stmt = select(ProfessionalProfile).where(
+            ProfessionalProfile.profile_visibility == "public",
+            ProfessionalProfile.onboarding_completed.is_(True),
+        )
         if city:
             stmt = stmt.where(func.lower(ProfessionalProfile.base_city) == city.lower())
 
@@ -123,7 +126,10 @@ class AIService:
 
         # If zero candidates match city exactly, broaden to all verified/public candidates
         if not candidates:
-            stmt = select(ProfessionalProfile).where(ProfessionalProfile.profile_visibility == "public")
+            stmt = select(ProfessionalProfile).where(
+                ProfessionalProfile.profile_visibility == "public",
+                ProfessionalProfile.onboarding_completed.is_(True),
+            )
             res = await db.execute(stmt)
             candidates = list(res.scalars().all())
 

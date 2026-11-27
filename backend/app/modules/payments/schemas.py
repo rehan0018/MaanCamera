@@ -17,9 +17,11 @@ class CreatePaymentOrderResponse(BaseModel):
     booking_id: uuid.UUID
     provider: str
     provider_order_id: str
+    provider_key_id: str | None = None
     amount_minor: int
     currency_code: str
     client_secret: str | None = None
+    idempotent_replay: bool = False
 
 
 class VerifyPaymentRequest(BaseModel):
@@ -48,3 +50,31 @@ class PaymentResponse(BaseModel):
 class RefundRequest(BaseModel):
     amount_minor: int = Field(..., gt=0)
     reason: str = Field(..., min_length=5, max_length=500)
+
+
+class RefundResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    payment_id: uuid.UUID
+    amount_minor: int
+    currency_code: str
+    reason: str
+    status: str
+    provider_refund_id: str | None = None
+    created_at: datetime
+
+
+class PaymentLedgerEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    booking_id: uuid.UUID
+    payment_id: uuid.UUID | None = None
+    refund_id: uuid.UUID | None = None
+    entry_type: str
+    direction: str
+    amount_minor: int
+    currency_code: str
+    notes: str | None = None
+    created_at: datetime

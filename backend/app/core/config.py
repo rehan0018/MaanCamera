@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     # Rate Limiting (Valkey-backed via slowapi)
     RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_FAIL_CLOSED: bool = True
     RATE_LIMIT_STORAGE_URI: str | None = None
 
     # Upload Limits
@@ -128,6 +129,8 @@ class Settings(BaseSettings):
                 raise ValueError("Default S3 secret key is forbidden in production environment.")
             if self.PAYMENT_PROVIDER == "mock":
                 raise ValueError("PAYMENT_PROVIDER=mock is forbidden in production environment.")
+            if self.PAYMENT_PROVIDER not in ("razorpay", "bank_transfer"):
+                raise ValueError("PAYMENT_PROVIDER in production must be 'razorpay' or 'bank_transfer'.")
             if self.PAYMENT_PROVIDER == "razorpay" and (
                 not self.RAZORPAY_KEY_ID or not self.RAZORPAY_KEY_SECRET or not self.RAZORPAY_WEBHOOK_SECRET
             ):

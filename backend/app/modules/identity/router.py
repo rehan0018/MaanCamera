@@ -77,6 +77,21 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     return user
 
 
+async def get_optional_current_user(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> User | None:
+    """Resolve authenticated user when present without failing anonymous public requests."""
+    token = _extract_session_token(request)
+    if not token:
+        return None
+    user = await IdentityService.get_user_by_session_token(db, token)
+    if not user:
+        return None
+    request.state.user_id = str(user.id)
+    await apply_rls_context(db, user_id=str(user.id), role=user.role)
+    return user
+
+
 @router.get("/auth/csrf")
 async def get_csrf_token(response: Response):
     """Issue a signed CSRF double-submit cookie for browser sessions."""
@@ -132,7 +147,6 @@ async def login(
     res = success_response(
         data={
             "user": UserResponse.model_validate(user).model_dump(mode="json"),
-            "session_token": token,
             "csrf_token": csrf_token,
         }
     )
@@ -154,7 +168,6 @@ async def refresh_session(
     res = success_response(
         data={
             "user": UserResponse.model_validate(user).model_dump(mode="json"),
-            "session_token": new_token,
             "csrf_token": csrf_token,
         }
     )

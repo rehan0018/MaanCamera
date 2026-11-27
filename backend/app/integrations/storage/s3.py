@@ -81,6 +81,24 @@ class StorageService:
             return None
         return f"{self.public_endpoint}/{self.public_bucket}/{storage_key}"
 
+    async def generate_presigned_download_url(
+        self,
+        storage_key: str,
+        *,
+        is_public: bool = False,
+        expires_in: int = 300,
+    ) -> str:
+        """Issue short-lived authorized S3 GET URL for private or protected media objects."""
+        bucket = self.public_bucket if is_public else self.private_bucket
+        async with self._get_client() as s3:
+            return str(
+                await s3.generate_presigned_url(
+                    ClientMethod="get_object",
+                    Params={"Bucket": bucket, "Key": storage_key},
+                    ExpiresIn=expires_in,
+                )
+            )
+
     async def delete_file(self, storage_key: str, is_public: bool = True) -> bool:
         """Delete an object from SeaweedFS."""
         bucket = self.public_bucket if is_public else self.private_bucket

@@ -21,6 +21,7 @@ class MediaAssetResponse(BaseModel):
     id: uuid.UUID
     storage_key: str
     public_url: str | None = None
+    visibility: str = "public"
     media_type: str
     mime_type: str
     file_size_bytes: int
@@ -28,6 +29,13 @@ class MediaAssetResponse(BaseModel):
     height: int | None = None
     processing_status: str
     display_order: int
+
+
+class MediaReadUrlResponse(BaseModel):
+    asset_id: uuid.UUID
+    url: str
+    visibility: str
+    expires_in_seconds: int | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -90,6 +98,7 @@ class UploadUrlResponse(BaseModel):
 class CompleteMediaUploadRequest(BaseModel):
     project_id: uuid.UUID
     storage_key: str = Field(..., min_length=5, max_length=500)
+    visibility: str | None = Field(default=None, pattern="^(public|private)$")
     media_type: str = Field("image", pattern=r"^image$")
     mime_type: str = Field(..., pattern=r"^image/(jpeg|png|webp)$")
     file_size_bytes: int = Field(..., gt=0, le=settings.MAX_UPLOAD_SIZE_BYTES)
