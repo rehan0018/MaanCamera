@@ -29,11 +29,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "[restore-verify] Using $(pg_restore --version)"
 echo "[restore-verify] Creating ephemeral verification database ${VERIFY_DB}..."
 psql --host="${VERIFY_HOST}" --port="${VERIFY_PORT}" --username="${VERIFY_USER}" -d postgres \
   -c "CREATE DATABASE ${VERIFY_DB};"
 psql --host="${VERIFY_HOST}" --port="${VERIFY_PORT}" --username="${VERIFY_USER}" -d "${VERIFY_DB}" \
-  -c "CREATE EXTENSION IF NOT EXISTS vector;"
+  -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;"
 
 echo "[restore-verify] Restoring dump into ${VERIFY_DB}..."
 pg_restore \
@@ -43,6 +44,7 @@ pg_restore \
   --dbname="${VERIFY_DB}" \
   --no-owner \
   --no-acl \
+  --no-comments \
   --exit-on-error \
   "${DUMP_FILE}"
 

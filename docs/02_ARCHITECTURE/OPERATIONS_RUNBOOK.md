@@ -7,6 +7,7 @@
 - `/metrics` is blocked at the Caddy edge (`403 Forbidden`) and scraped internally by Prometheus (`docker compose -f docker-compose.prod.yml --profile monitoring up -d`).
 
 ## 2. Database Backup & Verified Restore Drill
+Use PostgreSQL 16 client tools matching the `pgvector/pgvector:pg16` database container (for example via `docker exec` or `docker run --rm --network host pgvector/pgvector:pg16`) so `pg_dump` / `pg_restore` major versions stay aligned.
 1. Create a compressed PostgreSQL dump + SHA-256 checksum:
    ```bash
    POSTGRES_USER=maancamera POSTGRES_DB=maancamera_db BACKUP_DIR=/var/backups/maancamera ./infra/scripts/backup.sh

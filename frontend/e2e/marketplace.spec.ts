@@ -58,9 +58,10 @@ test.describe("MaanCamera Live Marketplace E2E", () => {
     await expect(page).toHaveURL(/\/professional\/dashboard/);
 
     const leadCard = page
-      .locator("div", { hasText: uniqueTitle })
+      .locator("div")
+      .filter({ hasText: uniqueTitle })
       .filter({ has: page.getByRole("button", { name: "Send Quotation" }) })
-      .first();
+      .last();
     await expect(leadCard).toBeVisible();
     await leadCard.getByRole("button", { name: "Send Quotation" }).click();
     await page.locator("form textarea").fill("Candid team + 400 retouched images.");
@@ -78,17 +79,19 @@ test.describe("MaanCamera Live Marketplace E2E", () => {
 
     await page.getByRole("button", { name: /My Enquiries/ }).click();
     const enqCard = page
-      .locator("div", { hasText: uniqueTitle })
+      .locator("div")
+      .filter({ hasText: uniqueTitle })
       .filter({ has: page.getByRole("button", { name: "Review Quotations" }) })
-      .first();
+      .last();
     await enqCard.getByRole("button", { name: "Review Quotations" }).click();
     await page.getByRole("button", { name: "Accept Quotation & Create Booking" }).click();
     await expect(page.getByText("Quotation accepted and booking created.")).toBeVisible();
 
     const bookingCard = page
-      .locator("div", { hasText: "Baner, Pune" })
+      .locator("div")
+      .filter({ hasText: "Baner, Pune" })
       .filter({ has: page.getByRole("button", { name: /Pay \/ Ledger/ }) })
-      .first();
+      .last();
     await bookingCard.getByRole("button", { name: /Pay \/ Ledger/ }).click();
     await page.getByRole("button", { name: "Create Payment Order" }).click();
     await page.getByRole("button", { name: "Complete Dev Mock Payment" }).click();
@@ -113,9 +116,10 @@ test.describe("MaanCamera Live Marketplace E2E", () => {
     await expect(page).toHaveURL(/\/admin\/dashboard/);
 
     const reviewCard = page
-      .locator("div", { hasText: uniqueReview })
+      .locator("div")
+      .filter({ hasText: uniqueReview })
       .filter({ has: page.getByRole("button", { name: "Approve" }) })
-      .first();
+      .last();
     await expect(reviewCard).toBeVisible();
     await reviewCard.getByRole("button", { name: "Approve" }).click();
     await expect(page.getByText("Review status updated to 'approved'.")).toBeVisible();

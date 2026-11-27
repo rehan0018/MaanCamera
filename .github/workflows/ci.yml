@@ -276,7 +276,7 @@ jobs:
           bash -n infra/scripts/backup.sh
           bash -n infra/scripts/restore_verify.sh
 
-      - name: Set up Python 3.11 & Install PostgreSQL Client
+      - name: Set up Python 3.11 & Install uv
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -289,6 +289,7 @@ jobs:
 
       - name: Run Live pg_dump Backup & Restore Drill
         env:
+          ENVIRONMENT: test
           PGPASSWORD: maancamera_local_dev_password
           POSTGRES_USER: maancamera
           POSTGRES_DB: maancamera_db
@@ -296,16 +297,32 @@ jobs:
           APP_DB_PASSWORD: maancamera_app_ci_password
           SYNC_DATABASE_URL: postgresql+psycopg2://maancamera:maancamera_local_dev_password@localhost:5432/maancamera_db
           DATABASE_URL: postgresql+asyncpg://maancamera_app:maancamera_app_ci_password@localhost:5432/maancamera_db
-          PG_HOST: localhost
-          PG_VERIFY_HOST: localhost
+          PG_HOST: 127.0.0.1
+          PG_VERIFY_HOST: 127.0.0.1
           BACKUP_DIR: /tmp/mc_backups
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
           cd backend
           uv sync --frozen
           uv run alembic upgrade head
           uv run python -m app.db.seed
           cd ..
-          bash infra/scripts/backup.sh
-          DUMP_PATH=$(ls -1 /tmp/mc_backups/*.dump | head -n 1)
-          bash infra/scripts/restore_verify.sh "$DUMP_PATH"
+          mkdir -p /tmp/mc_backups
+          docker run --rm --network host \
+            -e PGPASSWORD \
+            -e POSTGRES_USER \
+            -e POSTGRES_DB \
+            -e PG_HOST \
+            -e PG_VERIFY_HOST \
+            -e BACKUP_DIR \
+            -v "$PWD:/workspace:ro" \
+            -v "/tmp/mc_backups:/tmp/mc_backups" \
+            -w /workspace \
+            pgvector/pgvector:pg16 \
+            bash -lc '
+              set -euo pipefail
+              pg_dump --version
+              pg_restore --version
+              bash infra/scripts/backup.sh
+              DUMP_PATH=$(ls -1 /tmp/mc_backups/*.dump | head -n 1)
+              bash infra/scripts/restore_verify.sh "$DUMP_PATH"
+            '
