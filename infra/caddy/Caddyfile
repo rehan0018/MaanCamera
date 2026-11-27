@@ -17,6 +17,11 @@
 		max_size 20MB
 	}
 
+	@metrics_blocked {
+		path /metrics /metrics/*
+	}
+	respond @metrics_blocked 403
+
 	@api_paths {
 		path /api/* /docs /docs/* /redoc /redoc/* /health /ready
 	}

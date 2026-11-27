@@ -1,5 +1,6 @@
 """Payment service: Razorpay Orders API, idempotency, locking, ledger, refunds, and safe webhooks."""
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -13,13 +14,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
-from app.core.database import apply_rls_context
+from app.core.database import apply_rls_context, register_after_commit
 from app.core.exceptions import (
     BusinessRuleViolationException,
     ConflictException,
     ForbiddenException,
     NotFoundException,
 )
+from app.integrations.notifications.mailer import send_email_notification
 from app.modules.bookings.models import Booking
 from app.modules.bookings.service import BookingService
 from app.modules.identity.models import User
@@ -33,7 +35,7 @@ from app.modules.payments.schemas import (
     RefundResponse,
     VerifyPaymentRequest,
 )
-from app.modules.platform.models import IdempotencyRecord
+from app.modules.platform.models import AuditLog, IdempotencyRecord
 from app.modules.quotations.models import Quotation
 
 
@@ -441,6 +443,21 @@ class PaymentService:
             signature=req.provider_signature,
         )
         await db.flush()
+        if current_user.email:
+            cust_email = current_user.email
+            amt_inr = payment.amount_minor / 100
+            stage = payment.payment_type
+
+            async def _notify_capture() -> None:
+                with contextlib.suppress(Exception):
+                    await send_email_notification(
+                        recipient=cust_email,
+                        subject="MaanCamera Payment Confirmed",
+                        body=f"Payment of INR {amt_inr:,.2f} ({stage}) has been confirmed for your booking.",
+                        event_type="payment_captured",
+                    )
+
+            register_after_commit(db, _notify_capture)
         return payment
 
     @staticmethod
@@ -747,4 +764,164 @@ class PaymentService:
                 PaymentLedgerEntryResponse.model_validate(entry).model_dump(mode="json")
                 for entry in ledger
             ],
+        }
+
+    @staticmethod
+    async def capture_mock_payment_dev_only(
+        db: AsyncSession, payment_id: uuid.UUID, current_user: User
+    ) -> Payment:
+        """Complete a mock payment in non-production environments without exposing SECRET_KEY to clients."""
+        if settings.ENVIRONMENT == "production":
+            raise ForbiddenException("Dev mock payment capture is disabled in production.")
+
+        stmt = select(Payment).where(Payment.id == payment_id).with_for_update()
+        payment = (await db.execute(stmt)).scalar_one_or_none()
+        if not payment:
+            raise NotFoundException("Payment", payment_id)
+        if payment.provider != "mock":
+            raise BusinessRuleViolationException("Mock capture endpoint only supports mock provider orders.")
+
+        b_stmt = select(Booking).where(Booking.id == payment.booking_id).with_for_update()
+        booking = (await db.execute(b_stmt)).scalar_one_or_none()
+        if not booking:
+            raise NotFoundException("Booking", payment.booking_id)
+
+        if current_user.role != "admin" and booking.customer_id != current_user.id:
+            raise ForbiddenException("You do not have permission to capture this payment.")
+
+        if payment.payment_status == "captured":
+            return payment
+
+        sim_pay_id = f"pay_mock_{uuid.uuid4().hex[:12]}"
+        sig = compute_mock_signature(payment.provider_order_id or "", sim_pay_id)
+        PaymentService._apply_captured_payment(
+            db=db,
+            booking=booking,
+            payment=payment,
+            provider_payment_id=sim_pay_id,
+            signature=sig,
+        )
+        await db.flush()
+        return payment
+
+    @staticmethod
+    async def _fetch_razorpay_order_payments(order_id: str) -> list[dict[str, Any]]:
+        if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+            raise BusinessRuleViolationException("Razorpay API credentials are not configured.")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"https://api.razorpay.com/v1/orders/{order_id}/payments",
+                auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET),
+            )
+            if resp.status_code != 200:
+                raise BusinessRuleViolationException(
+                    f"Razorpay order payments lookup failed ({resp.status_code})."
+                )
+            data = dict(resp.json())
+            items = data.get("items") or []
+            return [dict(item) for item in items]
+
+    @staticmethod
+    async def reconcile_pending_payments(
+        db: AsyncSession,
+        *,
+        admin_user: User | None = None,
+        older_than_minutes: int = 15,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Reconcile stale pending Razorpay orders against Razorpay Orders/Payments API."""
+        await apply_rls_context(db, role="system")
+        cutoff = datetime.now(UTC) - timedelta(minutes=max(0, older_than_minutes))
+        stmt = (
+            select(Payment)
+            .where(
+                Payment.provider == "razorpay",
+                Payment.payment_status == "pending",
+                Payment.provider_order_id.is_not(None),
+                Payment.created_at <= cutoff,
+            )
+            .order_by(Payment.created_at.asc())
+            .limit(limit)
+        )
+        pending = list((await db.execute(stmt)).scalars().all())
+        checked = 0
+        reconciled_captured = 0
+        reconciled_failed = 0
+        details: list[dict[str, Any]] = []
+
+        for item in pending:
+            checked += 1
+            order_id = item.provider_order_id or ""
+            try:
+                gw_payments = await PaymentService._fetch_razorpay_order_payments(order_id)
+            except Exception as exc:
+                details.append({"payment_id": str(item.id), "status": "lookup_error", "error": str(exc)})
+                continue
+
+            captured_entity = next(
+                (
+                    gp
+                    for gp in gw_payments
+                    if gp.get("status") == "captured"
+                    and gp.get("amount") == item.amount_minor
+                    and str(gp.get("currency", "")).upper() == item.currency_code.upper()
+                ),
+                None,
+            )
+            if captured_entity:
+                locked_pay = (
+                    await db.execute(select(Payment).where(Payment.id == item.id).with_for_update())
+                ).scalar_one()
+                locked_booking = (
+                    await db.execute(
+                        select(Booking).where(Booking.id == locked_pay.booking_id).with_for_update()
+                    )
+                ).scalar_one()
+                if locked_pay.payment_status == "pending":
+                    PaymentService._apply_captured_payment(
+                        db=db,
+                        booking=locked_booking,
+                        payment=locked_pay,
+                        provider_payment_id=str(captured_entity.get("id") or ""),
+                        signature="reconciled_api",
+                    )
+                    db.add(
+                        AuditLog(
+                            actor_user_id=admin_user.id if admin_user else None,
+                            action="payment_reconciled",
+                            resource_type="payment",
+                            resource_id=locked_pay.id,
+                            metadata_payload={
+                                "provider_order_id": order_id,
+                                "provider_payment_id": captured_entity.get("id"),
+                                "new_status": "captured",
+                            },
+                        )
+                    )
+                    reconciled_captured += 1
+                    details.append({"payment_id": str(item.id), "status": "captured"})
+            elif gw_payments and all(gp.get("status") == "failed" for gp in gw_payments):
+                locked_pay = (
+                    await db.execute(select(Payment).where(Payment.id == item.id).with_for_update())
+                ).scalar_one()
+                if locked_pay.payment_status == "pending":
+                    locked_pay.payment_status = "failed"
+                    db.add(
+                        AuditLog(
+                            actor_user_id=admin_user.id if admin_user else None,
+                            action="payment_reconciled",
+                            resource_type="payment",
+                            resource_id=locked_pay.id,
+                            metadata_payload={"provider_order_id": order_id, "new_status": "failed"},
+                        )
+                    )
+                    reconciled_failed += 1
+                    details.append({"payment_id": str(item.id), "status": "failed"})
+
+        await db.flush()
+        return {
+            "checked": checked,
+            "reconciled_captured": reconciled_captured,
+            "reconciled_failed": reconciled_failed,
+            "details": details,
         }

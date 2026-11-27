@@ -11,7 +11,7 @@ from app.core.security import hash_password
 from app.modules.bookings.models import Booking
 from app.modules.enquiries.models import Enquiry, EnquiryRecipient
 from app.modules.identity.models import User
-from app.modules.payments.models import Payment
+from app.modules.payments.models import Payment, PaymentLedgerEntry
 from app.modules.professionals.models import Category, ProfessionalProfile
 from app.modules.quotations.models import Quotation
 
@@ -123,10 +123,14 @@ async def test_after_begin_hook_reapplies_rls_gucs_on_every_transaction(session_
             ]
         )
         await admin_s.flush()
+        pay_a_id = uuid.uuid4()
+        pay_b_id = uuid.uuid4()
         admin_s.add_all(
             [
-                Payment(booking_id=bk_a_id, provider="mock", provider_order_id=f"ord_a_{bk_a_id.hex[:8]}", amount_minor=25000),
-                Payment(booking_id=bk_b_id, provider="mock", provider_order_id=f"ord_b_{bk_b_id.hex[:8]}", amount_minor=50000),
+                Payment(id=pay_a_id, booking_id=bk_a_id, provider="mock", provider_order_id=f"ord_a_{bk_a_id.hex[:8]}", amount_minor=25000),
+                Payment(id=pay_b_id, booking_id=bk_b_id, provider="mock", provider_order_id=f"ord_b_{bk_b_id.hex[:8]}", amount_minor=50000),
+                PaymentLedgerEntry(booking_id=bk_a_id, payment_id=pay_a_id, entry_type="payment_captured", direction="credit", amount_minor=25000),
+                PaymentLedgerEntry(booking_id=bk_b_id, payment_id=pay_b_id, entry_type="payment_captured", direction="credit", amount_minor=50000),
             ]
         )
         await admin_s.commit()
@@ -136,6 +140,7 @@ async def test_after_begin_hook_reapplies_rls_gucs_on_every_transaction(session_
         assert list((await anon_s.execute(select(Booking))).scalars().all()) == []
         assert list((await anon_s.execute(select(Enquiry))).scalars().all()) == []
         assert list((await anon_s.execute(select(Payment))).scalars().all()) == []
+        assert list((await anon_s.execute(select(PaymentLedgerEntry))).scalars().all()) == []
         assert list((await anon_s.execute(select(Quotation))).scalars().all()) == []
 
     # Customer A context sees ONLY Customer A rows before AND after a mid-request commit()
@@ -144,6 +149,8 @@ async def test_after_begin_hook_reapplies_rls_gucs_on_every_transaction(session_
 
         bks_before = list((await cust_a_s.execute(select(Booking))).scalars().all())
         assert [b.id for b in bks_before] == [bk_a_id]
+        ledger_before = list((await cust_a_s.execute(select(PaymentLedgerEntry))).scalars().all())
+        assert [entry.booking_id for entry in ledger_before] == [bk_a_id]
 
         # Mid-request commit starts a fresh Postgres transaction; after_begin must preserve Customer A GUC
         await cust_a_s.commit()
@@ -151,9 +158,11 @@ async def test_after_begin_hook_reapplies_rls_gucs_on_every_transaction(session_
         bks_after = list((await cust_a_s.execute(select(Booking))).scalars().all())
         enqs_after = list((await cust_a_s.execute(select(Enquiry))).scalars().all())
         pays_after = list((await cust_a_s.execute(select(Payment))).scalars().all())
+        ledger_after = list((await cust_a_s.execute(select(PaymentLedgerEntry))).scalars().all())
         quots_after = list((await cust_a_s.execute(select(Quotation))).scalars().all())
 
         assert [b.id for b in bks_after] == [bk_a_id]
         assert [e.id for e in enqs_after] == [enq_a_id]
         assert [p.booking_id for p in pays_after] == [bk_a_id]
+        assert [entry.booking_id for entry in ledger_after] == [bk_a_id]
         assert [q.id for q in quots_after] == [quot_a_id]

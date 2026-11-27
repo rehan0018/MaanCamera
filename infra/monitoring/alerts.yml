@@ -1,0 +1,31 @@
+groups:
+  - name: maancamera.rules
+    rules:
+      - alert: MaanCameraBackendDown
+        expr: maancamera_up == 0 or absent(maancamera_up)
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MaanCamera backend metrics target is down"
+          description: "Prometheus failed to scrape backend:8000/metrics for 1 minute."
+
+      - alert: MaanCameraHigh5xxErrors
+        expr: increase(maancamera_http_errors_5xx_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated HTTP 5xx error rate on MaanCamera API"
+          description: "More than 10 5xx responses observed within the last 5 minutes."
+
+      - alert: MaanCameraHighLatency
+        expr: >
+          (rate(maancamera_http_request_duration_seconds_sum[5m]) /
+           clamp_min(rate(maancamera_http_requests_total[5m]), 1)) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Average API latency above 1.5s"
+          description: "Backend request duration average exceeded 1.5 seconds over 5 minutes."

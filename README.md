@@ -94,7 +94,9 @@ MaanCamera/
 │   ├── 04_SAAS/                 # Multi-tenancy, billing, subscriptions
 │   └── 08_COMPLIANCE/           # India DPDPA 2023, copyright, privacy
 ├── infra/
-│   └── caddy/Caddyfile          # Production HTTPS reverse proxy routing /api/* & frontend
+│   ├── caddy/Caddyfile          # Production HTTPS reverse proxy routing /api/* & frontend
+│   ├── monitoring/              # Prometheus scrape & alert rules (/metrics internal only)
+│   └── scripts/                 # PostgreSQL pg_dump backup & isolated restore verification drill
 ├── .env.example                 # Comprehensive environment variable blueprint
 ├── docker-compose.yml           # Full local multi-container orchestration stack
 ├── docker-compose.dev.yml       # Local development overrides

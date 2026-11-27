@@ -66,6 +66,27 @@ class ProjectCreateRequest(BaseModel):
     project_date: date | None = None
     description: str | None = None
     tags: list[str] = []
+    publication_status: str = Field("draft", pattern="^(draft|published|archived)$")
+
+
+class ProjectUpdateRequest(BaseModel):
+    title: str | None = Field(None, min_length=2, max_length=200)
+    style: str | None = None
+    location: str | None = None
+    project_date: date | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    publication_status: str | None = Field(None, pattern="^(draft|published|archived)$")
+
+
+class PortfolioResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    professional_id: uuid.UUID
+    title: str
+    description: str | None = None
+    visibility: str
 
 
 class UploadUrlRequest(BaseModel):

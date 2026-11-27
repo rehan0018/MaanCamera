@@ -18,6 +18,8 @@ from app.modules.professionals.schemas import (
     ProfileUpdateRequest,
     ServiceCreateRequest,
     ServiceResponse,
+    VerificationRequestResponse,
+    VerificationSubmitRequest,
 )
 from app.modules.professionals.service import ProfessionalService
 
@@ -69,6 +71,30 @@ async def create_my_service(
     service = await ProfessionalService.create_service(db, current_user, req)
     return success_response(
         data=ServiceResponse.model_validate(service).model_dump(mode="json"),
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@router.get("/professionals/me/verifications")
+async def list_my_verifications(
+    current_user: User = Depends(require_professional),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await ProfessionalService.list_my_verifications(db, current_user)
+    return success_response(
+        data=[VerificationRequestResponse.model_validate(r).model_dump(mode="json") for r in rows]
+    )
+
+
+@router.post("/professionals/me/verifications", status_code=status.HTTP_201_CREATED)
+async def submit_verification(
+    req: VerificationSubmitRequest,
+    current_user: User = Depends(require_professional),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await ProfessionalService.submit_verification(db, current_user, req)
+    return success_response(
+        data=VerificationRequestResponse.model_validate(row).model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
     )
 

@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +19,7 @@ from app.core.exceptions import AppException
 from app.core.rate_limit import limiter
 from app.core.responses import error_response
 from app.core.security import PiiScrubbingFilter, verify_csrf_token
+from app.modules.admin.router import router as admin_router
 from app.modules.ai.router import router as ai_router
 from app.modules.bookings.router import router as bookings_router
 from app.modules.enquiries.router import router as enquiries_router
@@ -55,6 +56,13 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
+
+
+_METRICS = {
+    "requests_total": 0,
+    "errors_5xx_total": 0,
+    "duration_seconds_sum": 0.0,
+}
 
 
 def _normalize_origin(raw: str) -> str:
@@ -115,7 +123,13 @@ async def security_and_request_context_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    process_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    elapsed_sec = time.perf_counter() - start_time
+    _METRICS["requests_total"] += 1
+    _METRICS["duration_seconds_sum"] += elapsed_sec
+    if response.status_code >= 500:
+        _METRICS["errors_5xx_total"] += 1
+
+    process_time_ms = round(elapsed_sec * 1000, 2)
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Process-Time-Ms"] = str(process_time_ms)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -231,6 +245,29 @@ async def readiness_check():
     }
 
 
+@app.get("/metrics", tags=["System"], include_in_schema=True)
+async def prometheus_metrics():
+    """Prometheus text-format metrics for internal monitoring (blocked externally by Caddy)."""
+    payload = "\n".join(
+        [
+            "# HELP maancamera_up Service availability indicator",
+            "# TYPE maancamera_up gauge",
+            "maancamera_up 1",
+            "# HELP maancamera_http_requests_total Total HTTP requests handled",
+            "# TYPE maancamera_http_requests_total counter",
+            f"maancamera_http_requests_total {int(_METRICS['requests_total'])}",
+            "# HELP maancamera_http_errors_5xx_total Total 5xx responses",
+            "# TYPE maancamera_http_errors_5xx_total counter",
+            f"maancamera_http_errors_5xx_total {int(_METRICS['errors_5xx_total'])}",
+            "# HELP maancamera_http_request_duration_seconds_sum Total HTTP latency seconds",
+            "# TYPE maancamera_http_request_duration_seconds_sum counter",
+            f"maancamera_http_request_duration_seconds_sum {_METRICS['duration_seconds_sum']:.6f}",
+            "",
+        ]
+    )
+    return Response(content=payload, media_type="text/plain; version=0.0.4")
+
+
 # ------------------------------------------------------------------------------
 # 5. Mount Modular API Routers under /api/v1
 # ------------------------------------------------------------------------------
@@ -243,4 +280,5 @@ app.include_router(quotations_router, prefix="/api/v1")
 app.include_router(bookings_router, prefix="/api/v1")
 app.include_router(payments_router, prefix="/api/v1")
 app.include_router(reviews_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(ai_router, prefix="/api/v1")

@@ -9,7 +9,6 @@ from app.core.database import get_db
 from app.core.responses import success_response
 from app.modules.bookings.schemas import (
     BookingCancelRequest,
-    BookingResponse,
     BookingStatusUpdate,
 )
 from app.modules.bookings.service import BookingService
@@ -25,9 +24,8 @@ async def get_my_bookings(
     db: AsyncSession = Depends(get_db),
 ):
     bookings = await BookingService.list_user_bookings(db, current_user)
-    return success_response(
-        data=[BookingResponse.model_validate(b).model_dump(mode="json") for b in bookings]
-    )
+    serialized = await BookingService.serialize_bookings(db, bookings)
+    return success_response(data=[b.model_dump(mode="json") for b in serialized])
 
 
 @router.get("/bookings/{id}")
@@ -37,7 +35,8 @@ async def get_booking(
     db: AsyncSession = Depends(get_db),
 ):
     booking = await BookingService.get_booking_by_id(db, id, current_user)
-    return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
+    serialized = await BookingService.serialize_bookings(db, [booking])
+    return success_response(data=serialized[0].model_dump(mode="json"))
 
 
 @router.patch("/bookings/{id}/status")
@@ -48,7 +47,8 @@ async def update_booking_status(
     db: AsyncSession = Depends(get_db),
 ):
     booking = await BookingService.update_status(db, id, req.booking_status, current_user)
-    return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
+    serialized = await BookingService.serialize_bookings(db, [booking])
+    return success_response(data=serialized[0].model_dump(mode="json"))
 
 
 @router.post("/bookings/{id}/complete")
@@ -58,7 +58,8 @@ async def complete_booking(
     db: AsyncSession = Depends(get_db),
 ):
     booking = await BookingService.complete_booking(db, id, current_user)
-    return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
+    serialized = await BookingService.serialize_bookings(db, [booking])
+    return success_response(data=serialized[0].model_dump(mode="json"))
 
 
 @router.post("/bookings/{id}/cancel")
@@ -69,4 +70,5 @@ async def cancel_booking(
     db: AsyncSession = Depends(get_db),
 ):
     booking = await BookingService.cancel_booking(db, id, req.cancellation_reason, current_user)
-    return success_response(data=BookingResponse.model_validate(booking).model_dump(mode="json"))
+    serialized = await BookingService.serialize_bookings(db, [booking])
+    return success_response(data=serialized[0].model_dump(mode="json"))

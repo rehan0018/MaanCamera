@@ -12,6 +12,7 @@ from tests.conftest import csrf_headers
 PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("GET", "/health"),
     ("GET", "/ready"),
+    ("GET", "/metrics"),
     ("GET", "/api/v1/auth/csrf"),
     ("POST", "/api/v1/auth/register"),
     ("POST", "/api/v1/auth/login"),
@@ -21,6 +22,7 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("POST", "/api/v1/auth/password-reset/confirm"),
     ("GET", "/api/v1/categories"),
     ("GET", "/api/v1/professionals/{id}"),
+    ("GET", "/api/v1/professionals/{id}/portfolios"),
     ("GET", "/api/v1/portfolios/{portfolio_id}/projects"),
     ("GET", "/api/v1/projects/{project_id}"),
     ("GET", "/api/v1/search/professionals"),
@@ -42,11 +44,16 @@ SAMPLE_BODIES: dict[str, dict] = {
         "name": "Service",
         "starting_price_minor": 10000,
     },
+    "/api/v1/professionals/me/verifications": {
+        "document_type": "government_id",
+        "document_storage_key": "private/none/doc.jpg",
+    },
     "/api/v1/projects": {
         "portfolio_id": str(uuid.uuid4()),
         "category_id": str(uuid.uuid4()),
         "title": "Sample Project",
     },
+    "/api/v1/projects/{project_id}": {"title": "Updated Project"},
     "/api/v1/media/upload-url": {
         "filename": "photo.jpg",
         "mime_type": "image/jpeg",
@@ -97,6 +104,8 @@ SAMPLE_BODIES: dict[str, dict] = {
     },
     "/api/v1/reviews/{id}/report": {"reason": "spam"},
     "/api/v1/admin/reviews/{id}/moderate": {"decision": "approved"},
+    "/api/v1/admin/verifications/{id}/decision": {"decision": "verified"},
+    "/api/v1/admin/reports/{id}/resolve": {"action": "dismiss"},
     "/api/v1/search/ai": {"query": "Wedding photographer in Pune under 50k"},
     "/api/v1/ai/recommendations": {"query": "Wedding photographer in Pune under 50k"},
     "/api/v1/ai/portfolio/analyze": {"project_id": str(uuid.uuid4())},
@@ -170,6 +179,11 @@ async def test_customer_role_cannot_invoke_professional_routes(client: AsyncClie
         ("PATCH", "/professionals/me", SAMPLE_BODIES["/api/v1/professionals/me"]),
         ("PATCH", f"/professionals/{seed_users['professional_profile'].id}", SAMPLE_BODIES["/api/v1/professionals/{id}"]),
         ("DELETE", f"/professionals/{seed_users['professional_profile'].id}", None),
+        ("GET", "/portfolios/me", None),
+        ("POST", "/professionals/me/verifications", SAMPLE_BODIES["/api/v1/professionals/me/verifications"]),
+        ("GET", "/admin/verifications", None),
+        ("GET", "/admin/reports", None),
+        ("GET", "/admin/reviews", None),
         ("POST", "/quotations", SAMPLE_BODIES["/api/v1/quotations"]),
         ("POST", "/media/upload-url", SAMPLE_BODIES["/api/v1/media/upload-url"]),
         (

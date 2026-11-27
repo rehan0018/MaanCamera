@@ -3,7 +3,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EnquiryCreateRequest(BaseModel):
@@ -21,6 +21,8 @@ class EnquiryCreateRequest(BaseModel):
 
 
 class EnquiryRecipientResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     enquiry_id: uuid.UUID
     professional_id: uuid.UUID
@@ -28,14 +30,16 @@ class EnquiryRecipientResponse(BaseModel):
     sent_at: datetime
     viewed_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
-
 
 class EnquiryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     customer_id: uuid.UUID
     category_id: uuid.UUID
+    category_name: str | None = None
+    customer_name: str | None = None
+    quotations_count: int = 0
     title: str
     description: str
     shoot_date: date | None = None
@@ -48,6 +52,3 @@ class EnquiryResponse(BaseModel):
     status: str
     created_at: datetime
     recipients: list[EnquiryRecipientResponse] | None = None
-
-    class Config:
-        from_attributes = True

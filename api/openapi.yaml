@@ -29,6 +29,20 @@ paths:
           content:
             application/json:
               schema: {}
+  /metrics:
+    get:
+      tags:
+      - System
+      summary: Prometheus Metrics
+      description: Prometheus text-format metrics for internal monitoring (blocked
+        externally by Caddy).
+      operationId: prometheus_metrics_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /api/v1/auth/csrf:
     get:
       tags:
@@ -474,6 +488,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/professionals/me/verifications:
+    get:
+      tags:
+      - Professionals & Marketplace
+      summary: List My Verifications
+      operationId: list_my_verifications_api_v1_professionals_me_verifications_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+    post:
+      tags:
+      - Professionals & Marketplace
+      summary: Submit Verification
+      operationId: submit_verification_api_v1_professionals_me_verifications_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationSubmitRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/professionals/{id}:
     get:
       tags:
@@ -579,6 +628,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/portfolios/me:
+    get:
+      tags:
+      - Portfolios & Media
+      summary: Get My Portfolios
+      operationId: get_my_portfolios_api_v1_portfolios_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/professionals/{id}/portfolios:
+    get:
+      tags:
+      - Portfolios & Media
+      summary: Get Professional Portfolios
+      operationId: get_professional_portfolios_api_v1_professionals__id__portfolios_get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/portfolios/{portfolio_id}/projects:
     get:
       tags:
@@ -611,6 +698,62 @@ paths:
       - Portfolios & Media
       summary: Get Project
       operationId: get_project_api_v1_projects__project_id__get
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Portfolios & Media
+      summary: Update Project
+      operationId: update_project_api_v1_projects__project_id__patch
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Project Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Portfolios & Media
+      summary: Delete Project
+      operationId: delete_project_api_v1_projects__project_id__delete
       parameters:
       - name: project_id
         in: path
@@ -709,6 +852,32 @@ paths:
       - Portfolios & Media
       summary: Get Media Access Url
       operationId: get_media_access_url_api_v1_media__asset_id__url_get
+      parameters:
+      - name: asset_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Asset Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/media/{asset_id}:
+    delete:
+      tags:
+      - Portfolios & Media
+      summary: Delete Media Asset
+      operationId: delete_media_asset_api_v1_media__asset_id__delete
       parameters:
       - name: asset_id
         in: path
@@ -856,6 +1025,44 @@ paths:
       - Enquiries
       summary: Get Enquiry
       operationId: get_enquiry_api_v1_enquiries__id__get
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/quotations/me:
+    get:
+      tags:
+      - Quotations
+      summary: Get My Quotations
+      operationId: get_my_quotations_api_v1_quotations_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/enquiries/{id}/quotations:
+    get:
+      tags:
+      - Quotations
+      summary: Get Enquiry Quotations
+      operationId: get_enquiry_quotations_api_v1_enquiries__id__quotations_get
       parameters:
       - name: id
         in: path
@@ -1226,6 +1433,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/{payment_id}/mock-capture:
+    post:
+      tags:
+      - Payments
+      summary: Mock Capture Payment
+      operationId: mock_capture_payment_api_v1_payments__payment_id__mock_capture_post
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/admin/reconcile:
+    post:
+      tags:
+      - Payments
+      summary: Reconcile Payments
+      operationId: reconcile_payments_api_v1_payments_admin_reconcile_post
+      parameters:
+      - name: older_than_minutes
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 10080
+          minimum: 0
+          default: 15
+          title: Older Than Minutes
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/bookings/{id}/review:
     post:
       tags:
@@ -1381,6 +1651,142 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ReviewModerationRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/verifications:
+    get:
+      tags:
+      - Admin Moderation & Trust
+      summary: List Verification Requests
+      operationId: list_verification_requests_api_v1_admin_verifications_get
+      parameters:
+      - name: verification_status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(pending|verified|rejected)$
+          default: pending
+          title: Verification Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/verifications/{id}/decision:
+    post:
+      tags:
+      - Admin Moderation & Trust
+      summary: Decide Verification Request
+      operationId: decide_verification_request_api_v1_admin_verifications__id__decision_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationDecisionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/reports:
+    get:
+      tags:
+      - Admin Moderation & Trust
+      summary: List Content Reports
+      operationId: list_content_reports_api_v1_admin_reports_get
+      parameters:
+      - name: report_status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(pending|dismissed|action_taken)$
+          default: pending
+          title: Report Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/reports/{id}/resolve:
+    post:
+      tags:
+      - Admin Moderation & Trust
+      summary: Resolve Content Report
+      operationId: resolve_content_report_api_v1_admin_reports__id__resolve_post
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportResolutionRequest'
       responses:
         '200':
           description: Successful Response
@@ -1964,12 +2370,62 @@ components:
           type: array
           title: Tags
           default: []
+        publication_status:
+          type: string
+          pattern: ^(draft|published|archived)$
+          title: Publication Status
+          default: draft
       type: object
       required:
       - portfolio_id
       - category_id
       - title
       title: ProjectCreateRequest
+    ProjectUpdateRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 2
+          - type: 'null'
+          title: Title
+        style:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Style
+        location:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Location
+        project_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Project Date
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Tags
+        publication_status:
+          anyOf:
+          - type: string
+            pattern: ^(draft|published|archived)$
+          - type: 'null'
+          title: Publication Status
+      type: object
+      title: ProjectUpdateRequest
     QuotationCreateRequest:
       properties:
         enquiry_id:
@@ -2072,6 +2528,22 @@ components:
       - amount_minor
       - reason
       title: RefundRequest
+    ReportResolutionRequest:
+      properties:
+        action:
+          type: string
+          pattern: ^(dismiss|hide_content)$
+          title: Action
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+      type: object
+      required:
+      - action
+      title: ReportResolutionRequest
     ReviewCreateRequest:
       properties:
         overall_rating:
@@ -2317,6 +2789,44 @@ components:
       - msg
       - type
       title: ValidationError
+    VerificationDecisionRequest:
+      properties:
+        decision:
+          type: string
+          pattern: ^(verified|rejected)$
+          title: Decision
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+      type: object
+      required:
+      - decision
+      title: VerificationDecisionRequest
+    VerificationSubmitRequest:
+      properties:
+        document_type:
+          type: string
+          pattern: ^(government_id|business_license|gst_certificate|equipment_invoice)$
+          title: Document Type
+        document_storage_key:
+          type: string
+          maxLength: 500
+          minLength: 5
+          title: Document Storage Key
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+      type: object
+      required:
+      - document_type
+      - document_storage_key
+      title: VerificationSubmitRequest
     VerifyPaymentRequest:
       properties:
         payment_id:

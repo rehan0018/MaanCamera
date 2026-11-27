@@ -1,12 +1,16 @@
 """Booking business logic, actor-enforced state machine, and audit logging."""
 
+import contextlib
 import uuid
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import register_after_commit
 from app.core.exceptions import BusinessRuleViolationException, ForbiddenException, NotFoundException
+from app.integrations.notifications.mailer import send_email_notification
 from app.modules.bookings.models import Booking
+from app.modules.bookings.schemas import BookingResponse
 from app.modules.identity.models import User
 from app.modules.platform.models import AuditLog
 from app.modules.professionals.models import ProfessionalProfile
@@ -159,6 +163,22 @@ class BookingService:
             )
         )
         await db.flush()
+        if prof:
+            pro_owner = await db.get(User, prof.owner_user_id)
+            if pro_owner and pro_owner.email:
+                pro_email = pro_owner.email
+                studio_name = prof.display_name
+
+                async def _notify_complete() -> None:
+                    with contextlib.suppress(Exception):
+                        await send_email_notification(
+                            recipient=pro_email,
+                            subject=f"Booking Completed — {studio_name}",
+                            body="Customer accepted delivery and marked the booking completed.",
+                            event_type="booking_completed",
+                        )
+
+                register_after_commit(db, _notify_complete)
         return booking
 
     @staticmethod
@@ -197,4 +217,45 @@ class BookingService:
             )
         )
         await db.flush()
+        cust = await db.get(User, booking.customer_id)
+        if cust and cust.email:
+            cust_email = cust.email
+            reason_copy = reason
+
+            async def _notify_cancel() -> None:
+                with contextlib.suppress(Exception):
+                    await send_email_notification(
+                        recipient=cust_email,
+                        subject="MaanCamera Booking Cancelled",
+                        body=f"Your booking has been cancelled. Reason: {reason_copy}",
+                        event_type="booking_cancelled",
+                    )
+
+            register_after_commit(db, _notify_cancel)
         return booking
+
+    @staticmethod
+    async def serialize_bookings(db: AsyncSession, bookings: list[Booking]) -> list[BookingResponse]:
+        if not bookings:
+            return []
+        prof_ids = {b.professional_id for b in bookings}
+        cust_ids = {b.customer_id for b in bookings}
+        profs = dict(
+            (
+                await db.execute(
+                    select(ProfessionalProfile.id, ProfessionalProfile.display_name).where(
+                        ProfessionalProfile.id.in_(prof_ids)
+                    )
+                )
+            ).all()
+        )
+        custs = dict(
+            (await db.execute(select(User.id, User.full_name).where(User.id.in_(cust_ids)))).all()
+        )
+        result: list[BookingResponse] = []
+        for b in bookings:
+            dto = BookingResponse.model_validate(b)
+            dto.professional_name = profs.get(b.professional_id)
+            dto.customer_name = custs.get(b.customer_id)
+            result.append(dto)
+        return result

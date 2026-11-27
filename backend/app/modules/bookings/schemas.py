@@ -3,7 +3,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BookingStatusUpdate(BaseModel):
@@ -15,11 +15,15 @@ class BookingCancelRequest(BaseModel):
 
 
 class BookingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     enquiry_id: uuid.UUID | None = None
     quotation_id: uuid.UUID | None = None
     customer_id: uuid.UUID
     professional_id: uuid.UUID
+    professional_name: str | None = None
+    customer_name: str | None = None
     shoot_date: date
     location: str
     agreed_amount_minor: int
@@ -30,6 +34,3 @@ class BookingResponse(BaseModel):
     cancellation_reason: str | None = None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

@@ -21,8 +21,10 @@ from app.modules.portfolios.models import MediaAsset, Portfolio, Project
 from app.modules.portfolios.schemas import (
     CompleteMediaUploadRequest,
     MediaReadUrlResponse,
+    PortfolioResponse,
     ProjectCreateRequest,
     ProjectResponse,
+    ProjectUpdateRequest,
     UploadUrlRequest,
     UploadUrlResponse,
 )
@@ -115,6 +117,11 @@ class PortfolioService:
             if not prof or prof.owner_user_id != current_user.id:
                 raise ForbiddenException("You do not have permission to add projects to this portfolio.")
 
+        if req.publication_status == "published":
+            raise BusinessRuleViolationException(
+                "Upload at least one public media asset to a draft project before publishing."
+            )
+
         clean_slug_base = re.sub(r"[^a-z0-9]+", "-", req.title.lower()).strip("-") or "project"
         slug = f"{clean_slug_base}-{uuid.uuid4().hex[:6]}"
 
@@ -128,11 +135,137 @@ class PortfolioService:
             project_date=req.project_date,
             description=req.description,
             tags=req.tags,
-            publication_status="published",
+            publication_status=req.publication_status,
         )
         db.add(project)
         await db.flush()
         return await PortfolioService.get_project_by_id(db, project.id, current_user=current_user)
+
+    @staticmethod
+    async def get_my_portfolios(db: AsyncSession, current_user: User) -> list[PortfolioResponse]:
+        prof = (
+            await db.execute(
+                select(ProfessionalProfile).where(ProfessionalProfile.owner_user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not prof:
+            return []
+
+        portfolios = list(
+            (
+                await db.execute(
+                    select(Portfolio)
+                    .where(Portfolio.professional_id == prof.id)
+                    .order_by(Portfolio.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not portfolios:
+            default_port = Portfolio(
+                professional_id=prof.id,
+                title="Featured Portfolio",
+                visibility="public",
+            )
+            db.add(default_port)
+            await db.flush()
+            portfolios = [default_port]
+        return [PortfolioResponse.model_validate(p) for p in portfolios]
+
+    @staticmethod
+    async def get_portfolios_by_professional(
+        db: AsyncSession, professional_id: uuid.UUID, current_user: User | None = None
+    ) -> list[PortfolioResponse]:
+        prof = await db.get(ProfessionalProfile, professional_id)
+        if not prof:
+            raise NotFoundException("ProfessionalProfile", professional_id)
+
+        is_privileged = bool(
+            current_user and (current_user.role == "admin" or prof.owner_user_id == current_user.id)
+        )
+        if prof.profile_visibility == "private" and not is_privileged:
+            raise ForbiddenException("This professional profile is currently private.")
+
+        stmt = select(Portfolio).where(Portfolio.professional_id == professional_id)
+        if not is_privileged:
+            stmt = stmt.where(Portfolio.visibility == "public")
+        stmt = stmt.order_by(Portfolio.created_at.asc())
+        portfolios = list((await db.execute(stmt)).scalars().all())
+        return [PortfolioResponse.model_validate(p) for p in portfolios]
+
+    @staticmethod
+    async def update_project(
+        db: AsyncSession, project_id: uuid.UUID, current_user: User, req: ProjectUpdateRequest
+    ) -> ProjectResponse:
+        stmt = (
+            select(Project)
+            .options(selectinload(Project.media_assets), selectinload(Project.portfolio))
+            .where(Project.id == project_id)
+        )
+        project = (await db.execute(stmt)).scalar_one_or_none()
+        if not project:
+            raise NotFoundException("Project", project_id)
+
+        if not await _is_portfolio_owner_or_admin(db, project.portfolio, current_user):
+            raise ForbiddenException("You do not have permission to update this project.")
+
+        updates = req.model_dump(exclude_unset=True)
+        if updates.get("publication_status") == "published":
+            has_public_asset = any(a.visibility == "public" for a in (project.media_assets or []))
+            if not has_public_asset:
+                raise BusinessRuleViolationException(
+                    "Upload at least one public media asset before publishing this project."
+                )
+
+        for field, value in updates.items():
+            setattr(project, field, value)
+
+        await db.flush()
+        return await PortfolioService.get_project_by_id(db, project.id, current_user=current_user)
+
+    @staticmethod
+    async def delete_project(
+        db: AsyncSession, project_id: uuid.UUID, current_user: User
+    ) -> bool:
+        stmt = select(Project).options(selectinload(Project.portfolio)).where(Project.id == project_id)
+        project = (await db.execute(stmt)).scalar_one_or_none()
+        if not project:
+            raise NotFoundException("Project", project_id)
+
+        if not await _is_portfolio_owner_or_admin(db, project.portfolio, current_user):
+            raise ForbiddenException("You do not have permission to delete this project.")
+
+        project.cover_asset_id = None
+        await db.flush()
+        await db.delete(project)
+        await db.flush()
+        return True
+
+    @staticmethod
+    async def delete_media_asset(
+        db: AsyncSession, asset_id: uuid.UUID, current_user: User
+    ) -> bool:
+        asset = await db.get(MediaAsset, asset_id)
+        if not asset:
+            raise NotFoundException("MediaAsset", asset_id)
+        project = await db.get(Project, asset.project_id)
+        if not project:
+            raise NotFoundException("Project", asset.project_id)
+        portfolio = await db.get(Portfolio, project.portfolio_id)
+        if not portfolio:
+            raise NotFoundException("Portfolio", project.portfolio_id)
+
+        if not await _is_portfolio_owner_or_admin(db, portfolio, current_user):
+            raise ForbiddenException("You do not have permission to delete this media asset.")
+
+        if project.cover_asset_id == asset.id:
+            project.cover_asset_id = None
+            await db.flush()
+
+        await db.delete(asset)
+        await db.flush()
+        return True
 
     @staticmethod
     async def generate_upload_url(current_user: User, req: UploadUrlRequest) -> UploadUrlResponse:

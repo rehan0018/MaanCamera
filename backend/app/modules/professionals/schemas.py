@@ -1,6 +1,7 @@
 """Schemas for professional profiles, skills, equipment, and services."""
 
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -122,3 +123,24 @@ class ProfileUpdateRequest(BaseModel):
     service_radius_km: int | None = Field(None, ge=0)
     travel_available: bool | None = None
     profile_visibility: str | None = Field(None, pattern="^(public|unlisted|private)$")
+
+
+class VerificationSubmitRequest(BaseModel):
+    document_type: str = Field(
+        ..., pattern="^(government_id|business_license|gst_certificate|equipment_invoice)$"
+    )
+    document_storage_key: str = Field(..., min_length=5, max_length=500)
+    notes: str | None = Field(None, max_length=1000)
+
+
+class VerificationRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    professional_id: uuid.UUID
+    document_type: str
+    document_storage_key: str
+    status: str
+    notes: str | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime

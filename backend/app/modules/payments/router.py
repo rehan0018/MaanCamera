@@ -2,10 +2,11 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.permissions import require_admin
 from app.core.responses import success_response
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
@@ -83,3 +84,29 @@ async def payment_webhook(
         db, provider, event_id, body_str, signature=signature
     )
     return {"status": "ok"}
+
+
+@router.post("/payments/{payment_id}/mock-capture")
+async def mock_capture_payment(
+    payment_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    payment = await PaymentService.capture_mock_payment_dev_only(db, payment_id, current_user)
+    return success_response(data=PaymentResponse.model_validate(payment).model_dump(mode="json"))
+
+
+@router.post("/payments/admin/reconcile")
+async def reconcile_payments(
+    older_than_minutes: int = Query(15, ge=0, le=10080),
+    limit: int = Query(50, ge=1, le=200),
+    admin_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    summary = await PaymentService.reconcile_pending_payments(
+        db,
+        admin_user=admin_user,
+        older_than_minutes=older_than_minutes,
+        limit=limit,
+    )
+    return success_response(data=summary)

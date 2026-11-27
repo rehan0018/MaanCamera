@@ -1,5 +1,6 @@
 """Celery worker configuration for asynchronous media validation, EXIF stripping, and WebP publishing."""
 
+import asyncio
 import contextlib
 import io
 import logging
@@ -200,3 +201,20 @@ def process_uploaded_media(asset_id: str, storage_key: str) -> dict[str, object]
             return {"asset_id": asset_id, "status": "failed", "error": str(exc)}
         finally:
             engine.dispose()
+
+
+@celery_app.task(name="tasks.reconcile_stale_payments")
+def reconcile_stale_payments(older_than_minutes: int = 15, limit: int = 50) -> dict[str, object]:
+    """Scheduled/async reconciliation task verifying pending Razorpay orders against gateway API."""
+    from app.core.database import AsyncSessionLocal
+    from app.modules.payments.service import PaymentService
+
+    async def _run() -> dict[str, object]:
+        async with AsyncSessionLocal() as session:
+            summary = await PaymentService.reconcile_pending_payments(
+                session, older_than_minutes=older_than_minutes, limit=limit
+            )
+            await session.commit()
+            return summary
+
+    return asyncio.run(_run())

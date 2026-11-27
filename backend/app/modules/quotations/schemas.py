@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class QuotationCreateRequest(BaseModel):
@@ -29,9 +29,13 @@ class QuotationRevisionRequest(BaseModel):
 
 
 class QuotationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     enquiry_id: uuid.UUID
     professional_id: uuid.UUID
+    professional_name: str | None = None
+    enquiry_title: str | None = None
     version_number: int
     total_amount_minor: int
     currency_code: str
@@ -43,6 +47,3 @@ class QuotationResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

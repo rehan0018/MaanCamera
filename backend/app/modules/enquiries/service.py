@@ -1,16 +1,20 @@
 """Enquiry service handling creation and multi-recipient distribution."""
 
+import contextlib
 import uuid
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.database import register_after_commit
 from app.core.exceptions import ForbiddenException, NotFoundException
+from app.integrations.notifications.mailer import send_email_notification
 from app.modules.enquiries.models import Enquiry, EnquiryRecipient
-from app.modules.enquiries.schemas import EnquiryCreateRequest
+from app.modules.enquiries.schemas import EnquiryCreateRequest, EnquiryResponse
 from app.modules.identity.models import User
-from app.modules.professionals.models import ProfessionalProfile
+from app.modules.professionals.models import Category, ProfessionalProfile
+from app.modules.quotations.models import Quotation
 
 
 class EnquiryService:
@@ -42,7 +46,37 @@ class EnquiryService:
             db.add(recipient)
 
         await db.flush()
-        return await EnquiryService.get_enquiry_by_id(db, enquiry.id)
+        loaded = await EnquiryService.get_enquiry_by_id(db, enquiry.id)
+
+        owner_emails_raw = list(
+            (
+                await db.execute(
+                    select(User.email)
+                    .join(ProfessionalProfile, ProfessionalProfile.owner_user_id == User.id)
+                    .where(ProfessionalProfile.id.in_(req.professional_ids), User.email.is_not(None))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        owner_emails = [email for email in owner_emails_raw if email]
+        enquiry_title = loaded.title
+        enquiry_city = loaded.city
+
+        async def _notify_recipients() -> None:
+            for email in owner_emails:
+                with contextlib.suppress(Exception):
+                    await send_email_notification(
+                        recipient=email,
+                        subject=f"New MaanCamera Enquiry: {enquiry_title}",
+                        body=f"You received a new shoot enquiry '{enquiry_title}' in {enquiry_city}. Log in to review and send a quotation.",
+                        event_type="enquiry_received",
+                    )
+
+        if owner_emails:
+            register_after_commit(db, _notify_recipients)
+
+        return loaded
 
     @staticmethod
     async def get_enquiry_by_id(
@@ -100,3 +134,36 @@ class EnquiryService:
         )
         res = await db.execute(stmt)
         return list(res.scalars().all())
+
+    @staticmethod
+    async def serialize_enquiries(db: AsyncSession, enquiries: list[Enquiry]) -> list[EnquiryResponse]:
+        if not enquiries:
+            return []
+        cat_ids = {e.category_id for e in enquiries}
+        cust_ids = {e.customer_id for e in enquiries}
+        enq_ids = [e.id for e in enquiries]
+
+        cats = dict(
+            (await db.execute(select(Category.id, Category.name).where(Category.id.in_(cat_ids)))).all()
+        )
+        customers = dict(
+            (await db.execute(select(User.id, User.full_name).where(User.id.in_(cust_ids)))).all()
+        )
+        quote_counts = dict(
+            (
+                await db.execute(
+                    select(Quotation.enquiry_id, func.count(Quotation.id))
+                    .where(Quotation.enquiry_id.in_(enq_ids), Quotation.status != "revised")
+                    .group_by(Quotation.enquiry_id)
+                )
+            ).all()
+        )
+
+        result: list[EnquiryResponse] = []
+        for e in enquiries:
+            dto = EnquiryResponse.model_validate(e)
+            dto.category_name = cats.get(e.category_id)
+            dto.customer_name = customers.get(e.customer_id)
+            dto.quotations_count = int(quote_counts.get(e.id, 0))
+            result.append(dto)
+        return result

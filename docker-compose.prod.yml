@@ -200,6 +200,20 @@ services:
     networks:
       - maancamera_edge
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    restart: always
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_prod_data:/prometheus
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - maancamera_internal
+
 volumes:
   postgres_prod_data:
   valkey_prod_data:
@@ -207,6 +221,7 @@ volumes:
   ollama_prod_models:
   caddy_data:
   caddy_config:
+  prometheus_prod_data:
 
 networks:
   maancamera_internal:

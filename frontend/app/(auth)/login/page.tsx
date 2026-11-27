@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Camera, Lock, Mail, ArrowRight, AlertCircle } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Camera, Lock, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 
-export default function LoginPage() {
+function LoginFormContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { refreshUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const rawNext = searchParams.get("next") || "";
+  const safeNext = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +27,10 @@ export default function LoginPage() {
     try {
       const res = await api.login({ email, password });
       const user = res.data.user || res.data;
-      if (user.role === "professional") {
+      await refreshUser();
+      if (safeNext) {
+        router.push(safeNext);
+      } else if (user.role === "professional") {
         router.push("/professional/dashboard");
       } else if (user.role === "admin") {
         router.push("/admin/dashboard");
@@ -72,7 +81,9 @@ export default function LoginPage() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-gray-300">Password</label>
-              <Link href="#" className="text-[11px] text-[#FF5E1E] hover:underline">Forgot password?</Link>
+              <Link href="/forgot-password" className="text-[11px] text-[#FF5E1E] hover:underline">
+                Forgot password?
+              </Link>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-gray-500 absolute left-3.5 top-3" />
@@ -98,12 +109,26 @@ export default function LoginPage() {
         </form>
 
         <div className="pt-4 border-t border-white/5 text-center text-xs text-gray-400">
-          Don't have an account yet?{" "}
+          Don&apos;t have an account yet?{" "}
           <Link href="/register" className="font-semibold text-[#FF5E1E] hover:underline">
             Create an Account
           </Link>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[60vh] flex items-center justify-center text-xs text-gray-400 gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-[#FF5E1E]" /> Loading sign-in...
+        </div>
+      }
+    >
+      <LoginFormContent />
+    </Suspense>
   );
 }

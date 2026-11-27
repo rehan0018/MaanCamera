@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.responses import success_response
-from app.modules.enquiries.schemas import EnquiryCreateRequest, EnquiryResponse
+from app.modules.enquiries.schemas import EnquiryCreateRequest
 from app.modules.enquiries.service import EnquiryService
 from app.modules.identity.models import User
 from app.modules.identity.router import get_current_user
@@ -22,8 +22,9 @@ async def create_enquiry(
     db: AsyncSession = Depends(get_db),
 ):
     enquiry = await EnquiryService.create_enquiry(db, current_user.id, req)
+    serialized = await EnquiryService.serialize_enquiries(db, [enquiry])
     return success_response(
-        data=EnquiryResponse.model_validate(enquiry).model_dump(mode="json"),
+        data=serialized[0].model_dump(mode="json"),
         status_code=status.HTTP_201_CREATED,
     )
 
@@ -37,9 +38,8 @@ async def get_my_enquiries(
         enquiries = await EnquiryService.list_professional_enquiries(db, current_user.id)
     else:
         enquiries = await EnquiryService.list_customer_enquiries(db, current_user.id)
-    return success_response(
-        data=[EnquiryResponse.model_validate(e).model_dump(mode="json") for e in enquiries]
-    )
+    serialized = await EnquiryService.serialize_enquiries(db, enquiries)
+    return success_response(data=[e.model_dump(mode="json") for e in serialized])
 
 
 @router.get("/enquiries/{id}")
@@ -49,4 +49,5 @@ async def get_enquiry(
     db: AsyncSession = Depends(get_db),
 ):
     enquiry = await EnquiryService.get_enquiry_by_id(db, id, current_user)
-    return success_response(data=EnquiryResponse.model_validate(enquiry).model_dump(mode="json"))
+    serialized = await EnquiryService.serialize_enquiries(db, [enquiry])
+    return success_response(data=serialized[0].model_dump(mode="json"))

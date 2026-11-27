@@ -3,21 +3,29 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Camera, Lock, Mail, User, Briefcase, ArrowRight, AlertCircle, Phone } from "lucide-react";
+import { Camera, User, Briefcase, ArrowRight, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { refreshUser } = useAuth();
   const [role, setRole] = useState<"customer" | "professional">("customer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptTerms, setAcceptTerms] = useState(true);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptTerms || !acceptPrivacy) {
+      setError("Please accept the Terms of Service and Privacy Policy.");
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -28,9 +36,12 @@ export default function RegisterPage() {
         phone: phone || undefined,
         password,
         role,
+        accept_terms: acceptTerms,
+        accept_privacy: acceptPrivacy,
       });
 
       await api.login({ email, password });
+      await refreshUser();
 
       if (role === "professional") {
         router.push("/professional/dashboard");
@@ -62,7 +73,6 @@ export default function RegisterPage() {
           </div>
         )}
 
-        {/* Account Role Selector */}
         <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#1b1c23] border border-white/10 text-xs font-semibold">
           <button
             type="button"
@@ -115,7 +125,6 @@ export default function RegisterPage() {
             <label className="text-xs font-semibold text-gray-300">Mobile Number (India +91)</label>
             <input
               type="tel"
-              required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="+91 98765 43210"
@@ -128,11 +137,23 @@ export default function RegisterPage() {
             <input
               type="password"
               required
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Minimum 8 characters"
               className="w-full bg-[#1b1c23] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#FF5E1E]"
             />
+          </div>
+
+          <div className="space-y-2 text-[11px] text-gray-300">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} />
+              <span>I accept the <Link href="/terms" className="text-[#FF5E1E] underline">Terms of Service</Link></span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={acceptPrivacy} onChange={(e) => setAcceptPrivacy(e.target.checked)} />
+              <span>I consent under the <Link href="/privacy" className="text-[#FF5E1E] underline">DPDPA 2023 Privacy Policy</Link></span>
+            </label>
           </div>
 
           <button
@@ -148,7 +169,7 @@ export default function RegisterPage() {
         <div className="pt-4 border-t border-white/5 text-center text-xs text-gray-400">
           Already registered?{" "}
           <Link href="/login" className="font-semibold text-[#FF5E1E] hover:underline">
-            Sign In
+            Sign In Instead
           </Link>
         </div>
       </div>

@@ -14,11 +14,14 @@ from app.core.exceptions import (
     NotFoundException,
 )
 from app.modules.identity.models import User
+from app.modules.platform.models import VerificationRequest
+from app.modules.portfolios.models import Portfolio
 from app.modules.professionals.models import Category, ProfessionalProfile, Service
 from app.modules.professionals.schemas import (
     ProfileCreateRequest,
     ProfileUpdateRequest,
     ServiceCreateRequest,
+    VerificationSubmitRequest,
 )
 
 
@@ -99,6 +102,14 @@ class ProfessionalService:
             onboarding_completed=False,
         )
         db.add(profile)
+        await db.flush()
+        db.add(
+            Portfolio(
+                professional_id=profile.id,
+                title="Featured Portfolio",
+                visibility="public",
+            )
+        )
         await db.flush()
         return await ProfessionalService.get_by_id_or_slug(
             db, str(profile.id), current_user=await db.get(User, user_id)
@@ -183,3 +194,44 @@ class ProfessionalService:
         stmt = select(Service).options(selectinload(Service.packages)).where(Service.id == service.id)
         res = await db.execute(stmt)
         return res.scalar_one()
+
+    @staticmethod
+    async def submit_verification(
+        db: AsyncSession,
+        current_user: User,
+        req: VerificationSubmitRequest,
+    ) -> VerificationRequest:
+        profile = await ProfessionalService.get_by_user_id(db, current_user.id)
+        if not profile:
+            raise ForbiddenException("Create your professional profile before submitting verification documents.")
+        expected_prefix = f"private/{current_user.id}/"
+        if not req.document_storage_key.startswith(expected_prefix):
+            raise BusinessRuleViolationException(
+                "Verification document storage key must reside under your private upload prefix."
+            )
+
+        ver = VerificationRequest(
+            professional_id=profile.id,
+            document_type=req.document_type,
+            document_storage_key=req.document_storage_key,
+            status="pending",
+            notes=req.notes,
+        )
+        db.add(ver)
+        await db.flush()
+        return ver
+
+    @staticmethod
+    async def list_my_verifications(
+        db: AsyncSession,
+        current_user: User,
+    ) -> list[VerificationRequest]:
+        profile = await ProfessionalService.get_by_user_id(db, current_user.id)
+        if not profile:
+            return []
+        stmt = (
+            select(VerificationRequest)
+            .where(VerificationRequest.professional_id == profile.id)
+            .order_by(VerificationRequest.created_at.desc())
+        )
+        return list((await db.execute(stmt)).scalars().all())
