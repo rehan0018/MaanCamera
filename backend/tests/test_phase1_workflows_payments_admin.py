@@ -445,17 +445,75 @@ async def test_payments_concurrency_razorpay_webhooks_and_reconciliation(
         )
         assert wh2.status_code == 200
 
-        # refund.processed webhook marks fully refunded payment via Razorpay signed event
+        # Out-of-order delayed payment.failed NEVER overwrites an already-captured payment
+        fail_wh_payload = json.dumps({
+            "id": f"evt_rzp_fail_{uuid.uuid4().hex[:8]}",
+            "event": "payment.failed",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_rzp_reconciled_01",
+                        "order_id": "order_rzp_stale_101",
+                        "amount": 300000,
+                        "currency": "INR",
+                    }
+                }
+            },
+        })
+        fail_sig = hmac.new(
+            settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"),
+            fail_wh_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        fail_wh = await client.post(
+            "/payments/webhooks/razorpay",
+            content=fail_wh_payload,
+            headers={"X-Razorpay-Signature": fail_sig, "Content-Type": "application/json"},
+        )
+        assert fail_wh.status_code == 200
+        post_fail_summary = await client.get(f"/payments/bookings/{booking_id}")
+        assert post_fail_summary.json()["data"]["paid_amount_minor"] == 300000
+        assert post_fail_summary.json()["data"]["payments"][0]["payment_status"] == "captured"
+
+        # Partial refund (100000) + over-refund guard (250000 > remaining 200000) -> 400
+        await client.post(
+            "/auth/login",
+            json={"email": "customer@example.com", "password": "CustomerPass@2026!"},
+            headers=csrf_headers(client),
+        )
+        await client.post(
+            f"/bookings/{booking_id}/cancel",
+            json={"cancellation_reason": "Testing partial refund schedule"},
+            headers=csrf_headers(client),
+        )
+        with patch(
+            "app.modules.payments.service.PaymentService._create_razorpay_refund",
+            new=AsyncMock(return_value="rfnd_rzp_partial_01"),
+        ):
+            part_ref = await client.post(
+                f"/payments/{payment_id}/refund",
+                json={"amount_minor": 100000, "reason": "Partial cancellation refund"},
+                headers=csrf_headers(client),
+            )
+            assert part_ref.status_code == 201
+            over_ref = await client.post(
+                f"/payments/{payment_id}/refund",
+                json={"amount_minor": 250000, "reason": "Exceeds remaining refundable"},
+                headers=csrf_headers(client),
+            )
+            assert over_ref.status_code == 400
+
+        # refund.processed webhook completes remaining 200000 refund and marks payment refunded
         ref_wh_payload = json.dumps({
             "id": f"evt_rzp_ref_{uuid.uuid4().hex[:8]}",
             "event": "refund.processed",
             "payload": {
                 "refund": {
                     "entity": {
-                        "id": "rfnd_rzp_001",
+                        "id": "rfnd_rzp_002",
                         "payment_id": "pay_rzp_reconciled_01",
-                        "amount": 300000,
-                        "notes": {"reason": "Customer requested refund"},
+                        "amount": 200000,
+                        "notes": {"reason": "Remaining refund processed"},
                     }
                 }
             },
@@ -472,6 +530,38 @@ async def test_payments_concurrency_razorpay_webhooks_and_reconciliation(
         )
         assert ref_wh.status_code == 200
 
+        # Out-of-order delayed payment.captured NEVER reverts an already-refunded payment
+        late_cap_payload = json.dumps({
+            "id": f"evt_rzp_late_cap_{uuid.uuid4().hex[:8]}",
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_rzp_reconciled_01",
+                        "order_id": "order_rzp_stale_101",
+                        "amount": 300000,
+                        "currency": "INR",
+                    }
+                }
+            },
+        })
+        late_cap_sig = hmac.new(
+            settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"),
+            late_cap_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        late_cap = await client.post(
+            "/payments/webhooks/razorpay",
+            content=late_cap_payload,
+            headers={"X-Razorpay-Signature": late_cap_sig, "Content-Type": "application/json"},
+        )
+        assert late_cap.status_code == 200
+
+        await client.post(
+            "/auth/login",
+            json={"email": "admin@example.com", "password": "AdminPass@2026!"},
+            headers=csrf_headers(client),
+        )
         summary = await client.get(f"/payments/bookings/{booking_id}")
         assert summary.status_code == 200
         assert summary.json()["data"]["paid_amount_minor"] == 0

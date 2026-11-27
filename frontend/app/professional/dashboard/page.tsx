@@ -443,7 +443,7 @@ export default function ProfessionalDashboard() {
           )}
 
           {/* Computed Metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="p-5 rounded-2xl bg-[#14151b] border border-white/10">
               <span className="text-xs text-gray-400">Client Enquiries</span>
               <div className="text-2xl font-extrabold text-white mt-1">{enquiries.length}</div>
@@ -455,6 +455,15 @@ export default function ProfessionalDashboard() {
             <div className="p-5 rounded-2xl bg-[#14151b] border border-white/10">
               <span className="text-xs text-gray-400">Active / Total Bookings</span>
               <div className="text-2xl font-extrabold text-white mt-1">{bookings.length}</div>
+            </div>
+            <div className="p-5 rounded-2xl bg-[#14151b] border border-white/10">
+              <span className="text-xs text-gray-400">Captured Revenue</span>
+              <div className="text-2xl font-extrabold text-emerald-400 mt-1">
+                ₹{Math.round(bookings.reduce((acc, b) => acc + (b.paid_amount_minor || 0), 0) / 100).toLocaleString("en-IN")}
+              </div>
+              <span className="text-[11px] text-gray-400">
+                of ₹{Math.round(bookings.reduce((acc, b) => acc + (b.agreed_amount_minor || 0), 0) / 100).toLocaleString("en-IN")} contracted
+              </span>
             </div>
             <div className="p-5 rounded-2xl bg-[#14151b] border border-white/10">
               <span className="text-xs text-gray-400">Verified Rating</span>
@@ -633,7 +642,12 @@ export default function ProfessionalDashboard() {
               </div>
 
               <div className="space-y-4">
-                {projects.map((pr) => (
+                {projects.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-[#14151b] border border-white/10 text-xs text-gray-400">
+                    No portfolio projects yet. Create a draft project above, upload a public photo, and publish when ready.
+                  </div>
+                ) : (
+                  projects.map((pr) => (
                   <div key={pr.id} className="p-5 rounded-2xl bg-[#14151b] border border-white/10 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -681,7 +695,8 @@ export default function ProfessionalDashboard() {
                       </div>
                     )}
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           )}

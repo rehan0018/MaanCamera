@@ -530,7 +530,8 @@ class PaymentService:
                 if p:
                     matched_payment_id = p.id
                     if event_type in ("payment.captured", "order.paid"):
-                        if p.payment_status != "captured":
+                        # Out-of-order guard: allow failed -> captured retries, never revert captured or refunded
+                        if p.payment_status in ("pending", "failed"):
                             captured_amount = payment_entity.get("amount")
                             captured_currency = str(payment_entity.get("currency", p.currency_code)).upper()
                             if captured_amount is None or int(captured_amount) != p.amount_minor:
